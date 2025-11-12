@@ -27,7 +27,7 @@ This is a lightweight **MVP (Minimum Viable Product)** version inspired by platf
 
 ## Core Features
 
-- User authentication (Register / Login / JWT)
+- User authentication with JWT + email verification (SMTP or dev echo)
 - Problem list & detailed view with Markdown rendering
 - Code submission & real-time result polling
 - PostgreSQL persistence
@@ -110,11 +110,33 @@ npm run dev
 
 ### Environment Variables
 
-File	Variable	Example
-backend/.env	JWT_SECRET	dev-secret
-	JWT_EXPIRE_MINUTES	60
-oj-frontend/.env.local	NEXT_PUBLIC_API_BASE	http://127.0.0.1:8000
+| File | Variable | Description | Example |
+|------|----------|-------------|---------|
+| `backend/.env` | `POSTGRES_HOST/PORT/DB/USER/PASSWORD` | DB connection settings | `localhost`, `oj`, etc. |
+|  | `JWT_SECRET` | Secret key for signing access tokens | `replace_with_long_random_string` |
+|  | `JWT_EXPIRE_MINUTES` | Access-token lifetime | `60` |
+|  | `VERIFY_BASE_URL` | Public base URL that serves `/auth/verify` | `http://127.0.0.1:8000` |
+|  | `DEV_ECHO_VERIFY_TOKEN` | When `1`, API response includes the verification link (useful on localhost without SMTP) | `1` |
+|  | `SMTP_HOST` | SMTP server hostname (leave empty to disable email sending) | `smtp.sendgrid.net` |
+|  | `SMTP_PORT` | SMTP port | `587` |
+|  | `SMTP_USER` / `SMTP_PASS` | Credentials for the SMTP server | `apikey` / `secret` |
+|  | `SMTP_FROM` | From header shown to users | `OJ <no-reply@example.com>` |
+|  | `SMTP_STARTTLS` | Set to `1` to enable STARTTLS | `1` |
+| `oj-frontend/.env.local` | `NEXT_PUBLIC_API_BASE` | Backend URL the frontend should call | `http://127.0.0.1:8000` |
 
+> Tip: keep `SMTP_HOST` empty and `DEV_ECHO_VERIFY_TOKEN=1` while developing locally.  
+> For production, fill every SMTP variable and set `DEV_ECHO_VERIFY_TOKEN=0` to require real emails.
+
+⸻
+
+### Account Verification Flow
+
+1. User signs up via `/signup`; the backend creates the account in a non-verified state.
+2. If SMTP is configured, a verification email is sent containing `VERIFY_BASE_URL/auth/verify?token=...`.  
+   - Failures are logged and surfaced in the API response.
+3. In local/dev mode (`DEV_ECHO_VERIFY_TOKEN=1`), the `/auth/register` response also contains `verify_url`, so you can click it directly without SMTP.
+4. Users must open the verification link before `/auth/login` will succeed (`Email not verified` otherwise).
+5. After login, the frontend stores the JWT in `localStorage` and `/me` reflects whether the account is verified (`me.is_verified`).
 
 ⸻
 
@@ -124,7 +146,12 @@ Register
 ```bash
 curl -X POST http://127.0.0.1:8000/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@x.com","password":"secret123"}'
+  -d '{
+        "email":"test@x.com",
+        "username":"tester",
+        "password":"secret123",
+        "password_confirm":"secret123"
+      }'
 ```
 Login
 ```bash
@@ -155,4 +182,3 @@ Credits
 
 Built with using FastAPI & Next.js
 Inspired by Baekjoon, LeetCode, and AtCoder.
-
