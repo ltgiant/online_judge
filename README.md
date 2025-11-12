@@ -1,4 +1,4 @@
-# 🧠 Online Judge (MVP)
+# Online Judge (MVP)
 
 A minimal **Online Judge platform** built with **FastAPI**, **Next.js**, and **PostgreSQL**.  
 Users can register, log in, solve programming problems, submit code, and get real-time verdicts.  
@@ -25,18 +25,18 @@ This is a lightweight **MVP (Minimum Viable Product)** version inspired by platf
 
 ---
 
-## 🧩 Core Features
+## Core Features
 
-- 👤 User authentication (Register / Login / JWT)
-- 📄 Problem list & detailed view with Markdown rendering
-- 🧮 Code submission & real-time result polling
-- 💾 PostgreSQL persistence
-- 🧠 Simple worker to execute and evaluate user code (Python)
-- 🧰 Clean separation of **frontend / backend / worker**
+- User authentication (Register / Login / JWT)
+- Problem list & detailed view with Markdown rendering
+- Code submission & real-time result polling
+- PostgreSQL persistence
+- Simple worker to execute and evaluate user code (Python)
+- Clean separation of **frontend / backend / worker**
 
 ---
 
-## 🗂️ Project Structure
+## Project Structure
 ```
 Online_Judge/
 ├── backend/             # FastAPI backend
@@ -60,9 +60,9 @@ Online_Judge/
 ```
 ---
 
-## 🚀 Run Locally
+## Run Locally
 
-### 1️⃣ Setup database (PostgreSQL)
+### 1. Setup database (PostgreSQL)
 ```bash
 psql -U postgres
 CREATE DATABASE oj;
@@ -79,7 +79,7 @@ psql "host=localhost dbname=oj user=oj password=ojpass" -f backend/sql/init.sql
 
 ⸻
 
-2️⃣ Backend (FastAPI)
+### 2. Backend (FastAPI)
 ```bash
 cd backend
 conda activate oj      # or your venv
@@ -90,7 +90,7 @@ uvicorn app:app --reload
 
 ⸻
 
-3️⃣ Worker (Judge)
+### 3. Worker (Judge)
 ```bash
 cd judge
 python worker.py
@@ -98,7 +98,7 @@ python worker.py
 
 ⸻
 
-4️⃣ Frontend (Next.js)
+### 4. Frontend (Next.js)
 ```bash
 cd oj-frontend
 npm install
@@ -108,7 +108,7 @@ npm run dev
 
 ⸻
 
-🔑 Environment Variables
+### Environment Variables
 
 File	Variable	Example
 backend/.env	JWT_SECRET	dev-secret
@@ -118,7 +118,7 @@ oj-frontend/.env.local	NEXT_PUBLIC_API_BASE	http://127.0.0.1:8000
 
 ⸻
 
-🧮 Example API Usage
+### Example API Usage
 
 Register
 ```bash
@@ -135,13 +135,13 @@ curl -X POST http://127.0.0.1:8000/auth/login \
 
 ⸻
 
-🧠 MVP Status
+MVP Status
 
-✅ User auth
-✅ Problem list/detail
-✅ Code submission & judging
-✅ Result display
-⚙️ Next steps → user submission history, admin panel, sandboxing
+- User auth
+- Problem list/detail
+- Code submission & judging
+- Result display
+Next steps → user submission history, admin panel, sandboxing
 
 ⸻
 
@@ -151,8 +151,8 @@ MIT License © 2025 [JihoonSeo]
 
 ⸻
 
-💡 Credits
+Credits
 
-Built with ❤️ using FastAPI & Next.js
+Built with using FastAPI & Next.js
 Inspired by Baekjoon, LeetCode, and AtCoder.
 
