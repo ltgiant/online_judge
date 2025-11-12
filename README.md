@@ -45,7 +45,7 @@ This is a lightweight **MVP (Minimum Viable Product)** version inspired by platf
 ---
 
 ## 🗂️ Project Structure
-
+```
 Online_Judge/
 ├── backend/             # FastAPI backend
 │   ├── app.py           # Main API entrypoint
@@ -65,7 +65,7 @@ Online_Judge/
 ├── requirements.txt     # Python dependencies
 ├── README.md
 └── .gitignore
-
+```
 ---
 
 ## 🚀 Run Locally
@@ -77,11 +77,13 @@ CREATE DATABASE oj;
 CREATE USER oj WITH PASSWORD 'ojpass';
 GRANT ALL PRIVILEGES ON DATABASE oj TO oj;
 \q
+```
 
 Then run:
+
 ```bash
 psql "host=localhost dbname=oj user=oj password=ojpass" -f backend/sql/init.sql
-
+```
 
 ⸻
 
@@ -91,7 +93,7 @@ cd backend
 conda activate oj      # or your venv
 pip install -r ../requirements.txt
 uvicorn app:app --reload
-
+```
 → Runs on http://127.0.0.1:8000
 
 ⸻
@@ -100,7 +102,7 @@ uvicorn app:app --reload
 ```bash
 cd judge
 python worker.py
-
+```
 
 ⸻
 
@@ -109,7 +111,7 @@ python worker.py
 cd oj-frontend
 npm install
 npm run dev
-
+```
 → Opens on http://localhost:3000
 
 ⸻
@@ -131,7 +133,7 @@ Register
 curl -X POST http://127.0.0.1:8000/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"test@x.com","password":"secret123"}'
-
+```
 Login
 ```bash
 curl -X POST http://127.0.0.1:8000/auth/login \
