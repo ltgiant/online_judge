@@ -1,11 +1,3 @@
-좋아, 지금 네 프로젝트(Online Judge MVP)에 완전히 어울리는
-README.md 전체 템플릿 만들어줄게.
-→ 깃허브에서 바로 보여도 깔끔하게 렌더링되는 형식으로.
-→ FastAPI + Next.js + PostgreSQL + Worker 구조 기준.
-
-⸻
-
-
 # 🧠 Online Judge (MVP)
 
 A minimal **Online Judge platform** built with **FastAPI**, **Next.js**, and **PostgreSQL**.  
