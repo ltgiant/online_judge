@@ -48,6 +48,21 @@ def get_user_by_email(email: str):
         """, (email,))
         return cur.fetchone()
 
+def get_user_by_id(user_id: int):
+    with DB() as cur:
+        cur.execute("""
+            SELECT
+                id,
+                email,
+                pwd_hash,
+                role,
+                username,
+                is_verified
+            FROM users
+            WHERE id=%s
+        """, (user_id,))
+        return cur.fetchone()
+
 def create_user_with_verify(email: str, username: str, pw_plain: str, *, ttl_minutes=30):
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)

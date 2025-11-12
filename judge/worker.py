@@ -1,8 +1,8 @@
-import os, time
+import os, time, json
 import psycopg2
 from psycopg2.extras import DictCursor
 from dotenv import load_dotenv
-from runner_py import run_python
+from runner_py import run_python, run_python_answer
 
 load_dotenv()
 DSN = f"dbname={os.getenv('POSTGRES_DB')} user={os.getenv('POSTGRES_USER')} password={os.getenv('POSTGRES_PASSWORD')} host={os.getenv('POSTGRES_HOST')} port={os.getenv('POSTGRES_PORT')}"
@@ -54,6 +54,25 @@ def finalize(conn, sid, status, score, max_time):
         """, (status, score, max_time, sid))
     conn.commit()
 
+def try_parse_structured(tc):
+    try:
+        data = json.loads(tc["input_text"])
+        expected = json.loads(tc["expected_text"])
+        if isinstance(data, (dict, list)) and isinstance(expected, (dict, list, int, float, str, bool, type(None))):
+            return data, expected
+    except json.JSONDecodeError:
+        pass
+    return None, None
+
+def normalize(val):
+    if isinstance(val, dict):
+        return {k: normalize(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple)):
+        return [normalize(v) for v in val]
+    if isinstance(val, set):
+        return sorted(normalize(v) for v in val)
+    return val
+
 def main():
     conn = psycopg2.connect(DSN)
     conn.autocommit = False
@@ -74,6 +93,41 @@ def main():
 
         for tc in tcs:
             tcid = tc["id"]
+            structured_input, structured_expected = try_parse_structured(tc)
+
+            if structured_input is not None:
+                code, out, err, elapsed = run_python_answer(src, structured_input, tc["timeout_ms"])
+                max_time = max(max_time, elapsed)
+                if code == 124:
+                    verdict = "tle"; final_status = "tle"
+                    stdout_to_store = ""
+                elif code != 0:
+                    verdict = "re"; final_status = "runtime_error"
+                    stdout_to_store = out
+                else:
+                    try:
+                        payload = json.loads(out)
+                        actual = payload.get("result")
+                        captured_stdout = payload.get("stdout", "")
+                    except json.JSONDecodeError:
+                        payload = None
+                        actual = None
+                        captured_stdout = out
+                    if payload is None:
+                        verdict = "runtime_error"; final_status = "runtime_error"
+                    else:
+                        if normalize(actual) == normalize(structured_expected):
+                            verdict = "ok"
+                            total_ok += 1
+                        else:
+                            verdict = "wa"
+                            if final_status == "accepted":
+                                final_status = "wrong_answer"
+                    stdout_to_store = captured_stdout
+                insert_result(conn, sid, tcid, verdict, elapsed, stdout_to_store, err)
+                conn.commit()
+                continue
+
             code, out, err, elapsed = run_python(src, tc["input_text"], tc["timeout_ms"])
             max_time = max(max_time, elapsed)
 

@@ -40,13 +40,21 @@ export default function ProblemPage() {
   const pid = Number(Array.isArray(id) ? id[0] : id);
 
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
-  const [code, setCode] = useState<string>("print(sum(map(int, input().split())))\n");
+  const [code, setCode] = useState<string>(
+    `def answer(n: int, nums: list[int], target: int) -> tuple[int, int]:
+    # TODO: implement
+    return (0, 0)
+`
+  );
   const [subId, setSubId] = useState<number | null>(null);
   const [status, setStatus] = useState<SubmissionSummary["status"] | null>(null);
   const [results, setResults] = useState<SubmissionResult[] | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [mySubs, setMySubs] = useState<SubmissionSummary[]>([]);
+  const [solved, setSolved] = useState(false);
+  const [loadingMySubs, setLoadingMySubs] = useState(false);
 
   // 로그인/검증 상태
   const { me, loading: loadingMe } = useMe();
@@ -63,6 +71,23 @@ export default function ProblemPage() {
       .catch(() => setError("Failed to load problem"))
       .finally(() => setLoading(false));
   }, [pid]);
+
+  useEffect(() => {
+    if (!me || !Number.isFinite(pid)) {
+      setMySubs([]);
+      setSolved(false);
+      return;
+    }
+    setLoadingMySubs(true);
+    api
+      .get<{ solved: boolean; submissions: SubmissionSummary[] }>(`/problems/${pid}/my-submissions`)
+      .then((res) => {
+        setSolved(res.data.solved);
+        setMySubs(res.data.submissions);
+      })
+      .catch(() => setMySubs([]))
+      .finally(() => setLoadingMySubs(false));
+  }, [me, pid]);
 
   // 제출
   const submit = useCallback(async () => {
@@ -151,7 +176,19 @@ export default function ProblemPage() {
             {/* 문제 본문 */}
             <section className="space-y-4">
               <div className="flex items-center justify-between">
-                <h1 className="text-xl font-bold text-gray-900">{problem.title}</h1>
+                <div>
+                  <h1 className="text-xl font-bold text-gray-900">{problem.title}</h1>
+                  {me && (
+                    <div className="mt-1 text-xs text-gray-600">
+                      Status:{" "}
+                      {solved ? (
+                        <span className="font-semibold text-green-600">Solved</span>
+                      ) : (
+                        <span className="font-semibold text-gray-500">Not solved</span>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <span
                   className={clsx(
                     "rounded-full px-3 py-1 text-xs font-semibold",
@@ -191,9 +228,8 @@ export default function ProblemPage() {
                 </ul>
               </div>
             </section>
-
-            {/* 에디터/제출/결과 */}
-            <section className="space-y-4">
+            {/* 에디터/제출/결과 (오른쪽) */}
+            <section className="flex flex-col gap-4">
               <div className="rounded-lg border bg-white">
                 <div className="border-b px-4 py-2.5 text-sm font-semibold">Editor (Python)</div>
                 <div className="p-3">
@@ -269,6 +305,43 @@ export default function ProblemPage() {
                   </div>
                 )}
               </div>
+              {me && (
+                <div className="rounded-lg border bg-white">
+                  <div className="border-b px-4 py-2.5 text-sm font-semibold">My Recent Submissions</div>
+                  {loadingMySubs ? (
+                    <div className="px-4 py-3 text-sm text-gray-500">Loading…</div>
+                  ) : mySubs.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-gray-500">
+                      No submissions yet. Write code and submit!
+                    </div>
+                  ) : (
+                    <div className="max-h-64 overflow-y-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="text-xs uppercase text-gray-500">
+                          <tr>
+                            <th className="px-3 py-2">ID</th>
+                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Score</th>
+                            <th className="px-3 py-2">Time</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mySubs.map((s) => (
+                            <tr key={s.id} className="border-t">
+                              <td className="px-3 py-2 text-xs text-gray-500">#{s.id}</td>
+                              <td className="px-3 py-2">
+                                <span className={statusClass(s.status)}>{s.status}</span>
+                              </td>
+                              <td className="px-3 py-2">{s.score ?? 0}</td>
+                              <td className="px-3 py-2">{s.time_ms ?? "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           </div>
         )}

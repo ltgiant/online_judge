@@ -28,6 +28,8 @@ This is a lightweight **MVP (Minimum Viable Product)** version inspired by platf
 ## Core Features
 
 - User authentication with JWT + email verification (SMTP or dev echo)
+- Role-based access control (student / teacher / admin)
+- Teachers/admins can author problems and review submissions from their assigned students
 - Problem list & detailed view with Markdown rendering
 - Code submission & real-time result polling
 - PostgreSQL persistence
@@ -44,7 +46,7 @@ Online_Judge/
 │   ├── auth.py          # JWT, password hash
 │   ├── logic.py         # Submission logic
 │   ├── db.py            # PostgreSQL connection
-│   └── sql/init.sql     # Table schema
+│   └── sql/             # Schema + docs (see sql/README.md)
 │
 ├── judge/               # Worker (executor)
 │   └── worker.py
@@ -140,6 +142,52 @@ npm run dev
 
 ⸻
 
+### Teacher/Admin Workflow
+
+1. Promote users to `teacher` or `admin` roles directly in the `users` table (e.g. `UPDATE users SET role='teacher' WHERE email='prof@x.com';`).
+2. Teachers/admins can create new problems through `POST /admin/problems` (body follows the `ProblemCreate` schema).
+3. Admins assign students to teachers by calling `POST /admin/teacher-assign`, which fills the `teacher_students` join table.
+4. Once assigned, teachers gain read access to their students’ submissions via `GET /teacher/students/{student_id}/submissions`, and they can open individual submissions/results without sharing credentials.
+
+Schema changes that power this workflow:
+
+- `problems.created_by` references the authoring user.
+- `teacher_students` enforces teacher ↔ student relationships (unique per pair).
+- `classes`, `class_teachers`, `class_students` organize virtual classrooms with join codes.
+- `class_problems` links problems to specific classes so assignments stay organized.
+
+⸻
+
+### Class Management
+
+1. Teachers visit `/teacher/classes` (frontend) or call `POST /teacher/classes` to create a class. Each class receives a unique join code.
+2. Classes can have multiple teachers (`POST /teacher/classes/{class_id}/teachers`) and students (`POST /teacher/classes/{class_id}/students`).
+3. Teachers can assign problems to classes (existing or brand-new) via `POST /teacher/classes/{class_id}/problems`.
+4. Problems assigned to classes are hidden from the global `/problems` list; only members (students, teachers, or admins) of those classes can open the statements.
+5. Teachers automatically see the submission history of every student in any class they belong to (no extra configuration needed) through `GET /teacher/classes/{id}/submissions`.
+6. Use `GET /teacher/classes` to list your classes and `GET /teacher/classes/{id}` to fetch teacher/student/problem rosters.
+7. The Next.js page at `http://localhost:3000/teacher/classes` lists classes and lets you create new ones; each class has its own management page at `/teacher/classes/[id]` for rosters, problems, testcases (CSV upload), and submissions.
+8. Students have a read-only view of their assigned classes and problems at `/student/classes`.
+
+When you store JSON testcases for function-based grading, the frontend automatically pretty-prints the arguments/expected values in the public samples so students see just the raw values (no `args`/`kwargs` boilerplate).
+
+⸻
+
+### Authoring Problems & Testcases
+
+You can evaluate solutions in two ways:
+
+- **Stdout-based (legacy):** Students read from `stdin` and print the exact expected string. `testcases.input_text` contains the raw stdin payload, and `expected_text` is the expected stdout.
+- **Function-based (recommended):** Students implement an `answer(...)` function and the judge compares its *return value*. To enable this mode, store JSON in both `input_text` and `expected_text`:
+  - `input_text`: `{"args": [arg1, arg2, ...], "kwargs": {"named": value}}` (the judge passes these to `answer(*args, **kwargs)`). A bare JSON array `[...]` is treated as positional args only.
+  - `expected_text`: JSON representing the expected return value (lists, tuples, dicts, numbers, strings, etc.).
+  - Example (Two Sum): `input_text` = `{"args": [4, [2,7,11,15], 9]}`, `expected_text` = `[1, 2]`.
+  - When uploading CSV testcases, quote the JSON so each cell stays intact.
+
+The frontend editor now scaffolds a default `answer(...)` stub; students no longer need to print anything for function-based problems.
+
+⸻
+
 ### Example API Usage
 
 Register
@@ -158,6 +206,72 @@ Login
 curl -X POST http://127.0.0.1:8000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@x.com","password":"secret123"}'
+```
+
+Create a class (teacher/admin)
+```bash
+curl -X POST http://127.0.0.1:8000/teacher/classes \
+  -H "Authorization: Bearer <TEACHER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Intro to Algorithms","description":"Spring cohort"}'
+```
+
+Assign a student to a teacher (admin only)
+```bash
+curl -X POST http://127.0.0.1:8000/admin/teacher-assign \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"teacher_id":2,"student_id":5}'
+```
+
+List submissions for a teacher's student
+```bash
+curl -X GET http://127.0.0.1:8000/teacher/students/5/submissions \
+  -H "Authorization: Bearer <TEACHER_TOKEN>"
+```
+
+Manage class membership
+```bash
+# Add student
+curl -X POST http://127.0.0.1:8000/teacher/classes/10/students \
+  -H "Authorization: Bearer <TEACHER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"student_email":"student@example.com"}'
+
+# Add co-teacher
+curl -X POST http://127.0.0.1:8000/teacher/classes/10/teachers \
+  -H "Authorization: Bearer <TEACHER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"teacher_email":"assistant@example.com"}'
+```
+
+Assign a problem to a class
+```bash
+curl -X POST http://127.0.0.1:8000/teacher/classes/10/problems \
+  -H "Authorization: Bearer <TEACHER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"problem_id":42}'
+```
+
+Create a new problem directly in a class
+```bash
+curl -X POST http://127.0.0.1:8000/teacher/classes/10/problems \
+  -H "Authorization: Bearer <TEACHER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "new_problem": {
+          "slug": "sum-two-numbers",
+          "title": "Sum Two Numbers",
+          "difficulty": "easy",
+          "statement_md": "Given A and B..."
+        }
+      }'
+```
+
+List submissions for an entire class
+```bash
+curl -X GET http://127.0.0.1:8000/teacher/classes/10/submissions \
+  -H "Authorization: Bearer <TEACHER_TOKEN>"
 ```
 
 ⸻

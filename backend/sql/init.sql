@@ -19,8 +19,47 @@ CREATE TABLE IF NOT EXISTS problems (
   difficulty   TEXT CHECK (difficulty IN ('easy','medium','hard')) NOT NULL,
   statement_md TEXT NOT NULL,
   languages    TEXT[] NOT NULL DEFAULT ARRAY['python'],
+  created_by   BIGINT REFERENCES users(id),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS teacher_students (
+  teacher_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  student_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (teacher_id, student_id)
+);
+
+CREATE TABLE IF NOT EXISTS classes (
+  id          BIGSERIAL PRIMARY KEY,
+  code        TEXT UNIQUE NOT NULL,
+  name        TEXT NOT NULL,
+  description TEXT,
+  created_by  BIGINT REFERENCES users(id),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS class_teachers (
+  class_id   BIGINT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  teacher_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (class_id, teacher_id)
+);
+
+CREATE TABLE IF NOT EXISTS class_students (
+  class_id   BIGINT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  student_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (class_id, student_id)
+);
+
+CREATE TABLE IF NOT EXISTS class_problems (
+  class_id    BIGINT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  problem_id  BIGINT NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+  assigned_by BIGINT REFERENCES users(id),
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (class_id, problem_id)
 );
 
 CREATE TABLE IF NOT EXISTS testcases (
