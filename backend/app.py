@@ -276,7 +276,14 @@ class Problem(BaseModel):
 def list_problems():
     """모든 문제 목록 (공개)"""
     with DB() as cur:
-        cur.execute("SELECT id, slug, title, difficulty FROM problems ORDER BY id")
+        cur.execute("""
+            SELECT id, slug, title, difficulty
+            FROM problems p
+            WHERE NOT EXISTS (
+                SELECT 1 FROM class_problems cp WHERE cp.problem_id = p.id
+            )
+            ORDER BY id
+        """)
         rows = cur.fetchall()
         return [Problem(id=r[0], slug=r[1], title=r[2], difficulty=r[3]) for r in rows]
 
@@ -477,6 +484,17 @@ def teacher_add_teacher_to_class(class_id: int, payload: ClassTeacherAddIn, me: 
     logic.add_teacher_to_class(class_id, teacher[0])
     return {"detail": "teacher_added", "teacher_id": teacher[0]}
 
+@app.delete("/teacher/classes/{class_id}")
+def teacher_delete_class(class_id: int, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    logic.delete_class(class_id)
+    return {"detail": "class_deleted"}
+
 @app.get("/teacher/classes/{class_id}/problems")
 def teacher_list_class_problems(class_id: int, me: MeOut = Depends(get_current_user)):
     ensure_role(me, {"teacher", "admin"})
@@ -518,6 +536,19 @@ def teacher_add_problem_to_class(class_id: int, payload: ClassProblemAssignIn, m
 
     logic.add_problem_to_class(class_id, problem_id, me.id)
     return {"detail": "problem_assigned", "problem_id": problem_id}
+
+@app.delete("/teacher/classes/{class_id}/problems/{problem_id}")
+def teacher_remove_problem_from_class(class_id: int, problem_id: int, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not logic.class_has_problem(class_id, problem_id):
+        raise HTTPException(status_code=404, detail="Problem not in class")
+    logic.remove_problem_from_class(class_id, problem_id)
+    return {"detail": "problem_removed"}
 
 @app.get("/student/classes")
 def student_list_classes(me: MeOut = Depends(get_current_user)):

@@ -168,6 +168,7 @@ Schema changes that power this workflow:
 6. Use `GET /teacher/classes` to list your classes and `GET /teacher/classes/{id}` to fetch teacher/student/problem rosters.
 7. The Next.js page at `http://localhost:3000/teacher/classes` lists classes and lets you create new ones; each class has its own management page at `/teacher/classes/[id]` for rosters, problems, testcases (CSV upload), and submissions.
 8. Students have a read-only view of their assigned classes and problems at `/student/classes`.
+9. Teachers can delete entire classes (`DELETE /teacher/classes/{id}`) or remove individual problems from a class; the UI exposes these actions on the class list/detail pages.
 
 When you store JSON testcases for function-based grading, the frontend automatically pretty-prints the arguments/expected values in the public samples so students see just the raw values (no `args`/`kwargs` boilerplate).
 

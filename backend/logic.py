@@ -7,8 +7,9 @@ def list_problems():
         cur.execute("""
             SELECT p.id, p.slug, p.title, p.difficulty
             FROM problems p
-            LEFT JOIN class_problems cp ON cp.problem_id = p.id
-            WHERE cp.problem_id IS NULL
+            WHERE NOT EXISTS (
+                SELECT 1 FROM class_problems cp WHERE cp.problem_id = p.id
+            )
             ORDER BY p.id DESC
         """)
         return [dict(id=r[0], slug=r[1], title=r[2], difficulty=r[3]) for r in cur.fetchall()]
@@ -390,6 +391,49 @@ def student_has_problem_access(student_id: int, problem_id: int) -> bool:
             WHERE cs.student_id=%s AND cp.problem_id=%s
         """, (student_id, problem_id))
         return cur.fetchone() is not None
+
+def remove_problem_from_class(class_id: int, problem_id: int):
+    with DB() as cur:
+        cur.execute(
+            "DELETE FROM class_problems WHERE class_id=%s AND problem_id=%s",
+            (class_id, problem_id),
+        )
+        cur.execute(
+            """
+            SELECT 1
+            FROM class_problems
+            WHERE problem_id=%s
+            """,
+            (problem_id,),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                "DELETE FROM submissions WHERE problem_id=%s",
+                (problem_id,),
+            )
+            cur.execute(
+                "DELETE FROM testcases WHERE problem_id=%s",
+                (problem_id,),
+            )
+            cur.execute(
+                "DELETE FROM problems WHERE id=%s",
+                (problem_id,),
+            )
+
+def delete_class(class_id: int):
+    with DB() as cur:
+        cur.execute("SELECT problem_id FROM class_problems WHERE class_id=%s", (class_id,))
+        problem_ids = [r[0] for r in cur.fetchall()]
+        cur.execute("DELETE FROM classes WHERE id=%s", (class_id,))
+        for pid in problem_ids:
+            cur.execute(
+                "SELECT 1 FROM class_problems WHERE problem_id=%s",
+                (pid,),
+            )
+            if not cur.fetchone():
+                cur.execute("DELETE FROM submissions WHERE problem_id=%s", (pid,))
+                cur.execute("DELETE FROM testcases WHERE problem_id=%s", (pid,))
+                cur.execute("DELETE FROM problems WHERE id=%s", (pid,))
 
 def list_user_submissions_for_problem(user_id: int, problem_id: int, limit: int = 10):
     with DB() as cur:

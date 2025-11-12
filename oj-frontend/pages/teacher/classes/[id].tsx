@@ -321,7 +321,9 @@ export default function TeacherClassDetailPage() {
         <ul className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
           {classProblems.map((p) => (
             <li key={p.id} className="rounded border border-gray-200 p-2 bg-gray-50">
-              <div className="font-semibold">{p.title}</div>
+              <div className="font-semibold">
+                {p.title} <span className="text-xs text-gray-500">(# {p.id})</span>
+              </div>
               <div className="text-xs text-gray-500">
                 Slug: {p.slug} · Difficulty: {p.difficulty}
               </div>
@@ -349,6 +351,28 @@ export default function TeacherClassDetailPage() {
               className="rounded border px-3 py-2 text-xs hover:bg-gray-50"
             >
               Assign
+            </button>
+            <button
+              className="rounded border border-red-500 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
+              disabled={!classProblems.length}
+              onClick={async () => {
+                if (!Number.isInteger(classId)) return;
+                if (!existingProblemId.trim()) {
+                  setError("Enter the problem ID you want to remove.");
+                  return;
+                }
+                if (!confirm("Remove this problem from the class?")) return;
+                try {
+                  await api.delete(`/teacher/classes/${classId}/problems/${existingProblemId}`);
+                  setStatus("Problem removed from class");
+                  setExistingProblemId("");
+                  await fetchClassProblems();
+                } catch (e: any) {
+                  setError(e?.response?.data?.detail ?? "Failed to remove problem");
+                }
+              }}
+            >
+              Remove
             </button>
           </div>
           <div className="rounded border p-3 text-xs space-y-2">

@@ -128,12 +128,29 @@ export default function TeacherClassesListPage() {
                     Students: {cls.student_count}
                   </div>
                 </div>
-                <button
-                  className="rounded border px-3 py-1 text-xs hover:bg-gray-50"
-                  onClick={() => router.push(`/teacher/classes/${cls.id}`)}
-                >
-                  Manage
-                </button>
+                <div className="flex flex-col items-end gap-2">
+                  <button
+                    className="rounded border px-3 py-1 text-xs hover:bg-gray-50"
+                    onClick={() => router.push(`/teacher/classes/${cls.id}`)}
+                  >
+                    Manage
+                  </button>
+                  <button
+                    className="text-xs text-red-600 hover:underline"
+                    onClick={async () => {
+                      if (!confirm(`Delete class \"${cls.name}\"? This cannot be undone.`)) return;
+                      try {
+                        await api.delete(`/teacher/classes/${cls.id}`);
+                        setStatus(`Deleted class ${cls.name}`);
+                        await fetchClasses();
+                      } catch (e: any) {
+                        setError(e?.response?.data?.detail ?? "Failed to delete class");
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </li>
           ))}
