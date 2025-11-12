@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS testcases (
 CREATE TABLE IF NOT EXISTS submissions (
   id          BIGSERIAL PRIMARY KEY,
   user_id     BIGINT REFERENCES users(id),
-  problem_id  BIGINT NOT NULL REFERENCES problems(id),
+  problem_id  BIGINT NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
   language    TEXT NOT NULL CHECK (language = 'python'),
   source_code TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'queued', -- queued|running|accepted|wrong_answer|tle|runtime_error|system_error|compile_error

@@ -155,6 +155,7 @@ Schema changes that power this workflow:
 - `teacher_students` enforces teacher ↔ student relationships (unique per pair).
 - `classes`, `class_teachers`, `class_students` organize virtual classrooms with join codes.
 - `class_problems` links problems to specific classes so assignments stay organized.
+- `ON DELETE CASCADE` constraints on `testcases`, `submissions`, and `class_problems` ensure that deleting a problem cleans up all dependent rows automatically.
 
 ⸻
 
