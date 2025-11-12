@@ -1,0 +1,20 @@
+# Core
+fastapi==0.115.0
+uvicorn==0.30.6
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+
+# Auth
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+pydantic[email]==2.8.2
+
+# Optional (for async DB if needed later)
+# asyncpg==0.29.0
+
+# Worker & Utils
+requests==2.32.3
+
+# Dev tools
+black==24.10.0
+isort==5.13.2

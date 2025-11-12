@@ -1,0 +1,6 @@
+/* Tailwind v4 방식 */
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* (선택) 기본 여백/폰트 조금 보정 */
+.prose { max-width: none; }
