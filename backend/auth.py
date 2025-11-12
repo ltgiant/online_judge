@@ -4,7 +4,7 @@ from typing import Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
-
+import secrets
 from backend.db import DB  # 당신의 DB 컨텍스트 래퍼
 
 pwd_ctx = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
@@ -32,16 +32,49 @@ def decode_access_token(token: str, secret: str) -> Optional[TokenData]:
     except JWTError:
         return None
 
+
 def get_user_by_email(email: str):
     with DB() as cur:
-        cur.execute("SELECT id, email, pwd_hash, role FROM users WHERE email=%s", (email,))
-        row = cur.fetchone()
-        return row  # (id, email, pwd_hash, role) or None
+        cur.execute("""
+            SELECT
+                id,          
+                email,        
+                pwd_hash,    
+                role,        
+                username,     
+                is_verified
+            FROM users
+            WHERE email=%s
+        """, (email,))
+        return cur.fetchone()
 
-def create_user(email: str, pw_plain: str) -> int:
+def create_user_with_verify(email: str, username: str, pw_plain: str, *, ttl_minutes=30):
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
     with DB() as cur:
-        cur.execute(
-            "INSERT INTO users(email, pwd_hash, role) VALUES (%s,%s,'student') RETURNING id",
-            (email, hash_password(pw_plain))
-        )
-        return cur.fetchone()[0]
+        cur.execute("""
+            INSERT INTO users(email, pwd_hash, role, username, is_verified, verify_token, verify_expires)
+            VALUES (%s, %s, 'student', %s, false, %s, %s)
+            RETURNING id
+        """, (email, hash_password(pw_plain), username, token, expires))
+        uid = cur.fetchone()[0]
+    return uid, token, expires
+
+def consume_verify_token(token: str) -> bool:
+    now = datetime.now(timezone.utc)
+    with DB() as cur:
+        cur.execute("""
+            SELECT id, verify_expires FROM users WHERE verify_token=%s
+        """, (token,))
+        row = cur.fetchone()
+        if not row:
+            return False
+        uid, exp = row
+        if not exp or exp < now:
+            return False
+        cur.execute("""
+            UPDATE users
+            SET is_verified=true, verify_token=NULL, verify_expires=NULL
+            WHERE id=%s
+        """, (uid,))
+        return True

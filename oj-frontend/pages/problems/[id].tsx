@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
 import api from "@/lib/api";
+import { useMe } from "@/lib/useMe";
 import { ProblemDetail, SubmissionSummary, SubmissionResult } from "@/lib/types";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
@@ -46,14 +47,10 @@ export default function ProblemPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // 로그인 상태 판정 (CSR)
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsLoggedIn(!!localStorage.getItem("access_token"));
-    }
-  }, []);
+  // 로그인/검증 상태
+  const { me, loading: loadingMe } = useMe();
+  const canSubmit = !!me && me.is_verified;
 
   // 문제 상세 로드
   useEffect(() => {
@@ -71,8 +68,12 @@ export default function ProblemPage() {
   const submit = useCallback(async () => {
     if (!Number.isFinite(pid)) return;
 
-    if (!isLoggedIn) {
+    if (!me) {
       setError("Login required. Please sign in first.");
+      return;
+    }
+    if (!me.is_verified) {
+      setError("Email not verified. Please verify your email.");
       return;
     }
 
@@ -97,7 +98,7 @@ export default function ProblemPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [pid, code, isLoggedIn]);
+  }, [pid, code, me]);
 
   // 상태 폴링
   useEffect(() => {
@@ -130,12 +131,18 @@ export default function ProblemPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-
       <main className="mx-auto max-w-5xl px-4 py-8">
         {loading && <div className="text-gray-500">Loading…</div>}
+
         {error && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error} {!isLoggedIn && <a className="ml-2 underline" href="/login">Go to Login</a>}
+            {error} {!me && <a className="ml-2 underline" href="/login">Go to Login</a>}
+          </div>
+        )}
+
+        {!loadingMe && me && !me.is_verified && (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Your email is not verified. Please check your inbox (or use the verify link shown after sign-up in dev mode).
           </div>
         )}
 
@@ -202,10 +209,10 @@ export default function ProblemPage() {
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <button
                       onClick={submit}
-                      disabled={submitting || !isLoggedIn}
+                      disabled={submitting || !canSubmit}
                       className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                     >
-                      {!isLoggedIn ? "Login to Submit" : submitting ? "Submitting…" : "Submit"}
+                      {!me ? "Login to Submit" : !me.is_verified ? "Verify email to submit" : submitting ? "Submitting…" : "Submit"}
                     </button>
 
                     {subId && (

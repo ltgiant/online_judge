@@ -1,12 +1,23 @@
 # backend/app.py (중요 부분만 발췌/추가)
 import os
 from fastapi import FastAPI, Depends, HTTPException, status, Header
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from datetime import datetime, timedelta, timezone
+import secrets
 from backend import logic
+import logging
+
 from backend.auth import (
-    create_access_token, decode_access_token,
-    get_user_by_email, verify_password, create_user
+    create_access_token,
+    decode_access_token,
+    get_user_by_email,
+    verify_password,
+    create_user_with_verify,
+    consume_verify_token,
 )
+from backend.emailer import send_verify_email, SMTPConfigError
+
+logger = logging.getLogger(__name__)
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret")
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
@@ -26,7 +37,16 @@ app.add_middleware(
 # ---------- 인증 스키마 ----------
 class RegisterIn(BaseModel):
     email: EmailStr
-    password: str
+    username: str = Field(min_length=1, max_length=40)
+    password: str = Field(min_length=8)
+    password_confirm: str
+
+    @field_validator("password_confirm")
+    @classmethod
+    def pw_match(cls, v, info):
+        if "password" in info.data and v != info.data["password"]:
+            raise ValueError("passwords_do_not_match")
+        return v
 
 class LoginIn(BaseModel):
     email: EmailStr
@@ -39,7 +59,9 @@ class TokenOut(BaseModel):
 class MeOut(BaseModel):
     id: int
     email: EmailStr
+    username: str | None = None
     role: str
+    is_verified: bool
 
 def get_current_user(authorization: str | None = Header(default=None)) -> MeOut:
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -52,29 +74,88 @@ def get_current_user(authorization: str | None = Header(default=None)) -> MeOut:
     row = get_user_by_email(data.email)
     if not row or row[0] != data.user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    uid, email, _, role = row
-    return MeOut(id=uid, email=email, role=role)
+    uid, email, _, role, username, is_verified = row
+    return MeOut(id=uid, email=email, username=username, role=role, is_verified=is_verified)
 
 # ---------- 인증 라우트 ----------
-@app.post("/auth/register", response_model=MeOut)
+DEV_ECHO_VERIFY_TOKEN = os.getenv("DEV_ECHO_VERIFY_TOKEN", "1") == "1"  # 개발용: 토큰을 응답에 노출
+VERIFY_BASE_URL = os.getenv("VERIFY_BASE_URL", "http://127.0.0.1:8000")
+
+
+def build_verify_url(token: str) -> str:
+    base = VERIFY_BASE_URL.rstrip("/")
+    return f"{base}/auth/verify?token={token}"
+
+@app.post("/auth/register")
 def api_register(inp: RegisterIn):
     if get_user_by_email(inp.email):
         raise HTTPException(status_code=409, detail="Email already registered")
-    uid = create_user(inp.email, inp.password)
-    row = get_user_by_email(inp.email)
-    return MeOut(id=uid, email=row[1], role=row[3])
+    uid, token, exp = create_user_with_verify(inp.email, inp.username, inp.password)
+    verify_url = build_verify_url(token)
+
+    smtp_host = (os.getenv("SMTP_HOST") or "").strip()
+    smtp_error: Exception | None = None
+
+    if smtp_host:
+        try:
+            send_verify_email(inp.email, verify_url)
+        except SMTPConfigError as cfg_err:
+            logger.error("SMTP configuration error: %s", cfg_err)
+            smtp_error = cfg_err
+        except Exception as send_err:  # pragma: no cover - defensive
+            logger.exception("Failed to send verification email")
+            smtp_error = send_err
+
+        if smtp_error and not DEV_ECHO_VERIFY_TOKEN:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to send verification email: {smtp_error}",
+            )
+    elif not DEV_ECHO_VERIFY_TOKEN:
+        raise HTTPException(
+            status_code=500,
+            detail="SMTP is not configured; cannot send verification email.",
+        )
+
+    # 실제 운영: 여기서 이메일 발송(smtp)로 토큰 링크 전달
+    # dev 모드: 응답에 토큰/만료를 포함해서 프론트에서 바로 확인 가능
+    payload = {"user_id": uid, "email": inp.email, "verify_expires": exp.isoformat()}
+    if smtp_error:
+        payload["email_delivery"] = "failed"
+        payload["email_error"] = str(smtp_error)
+    elif smtp_host:
+        payload["email_delivery"] = "sent"
+    else:
+        payload["email_delivery"] = "dev_echo"
+    if DEV_ECHO_VERIFY_TOKEN:
+        payload["verify_token"] = token
+        payload["verify_url"] = verify_url
+    return payload
+
+@app.get("/auth/verify")
+def api_verify(token: str):
+    ok = consume_verify_token(token)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    return {"detail": "Email verified. You can now login."}
 
 @app.post("/auth/login", response_model=TokenOut)
 def api_login(inp: LoginIn):
     row = get_user_by_email(inp.email)
     if not row or not verify_password(inp.password, row[2]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_access_token(row[0], row[1], JWT_SECRET, JWT_EXPIRE_MINUTES)
+    # row: id, email, pwd_hash, role, username, is_verified
+    if not row[5]:
+        raise HTTPException(status_code=401, detail="Email not verified")
+    token = create_access_token(row[0], row[1], os.getenv("JWT_SECRET", "dev-secret"), int(os.getenv("JWT_EXPIRE_MINUTES","60")))
     return TokenOut(access_token=token)
 
 @app.get("/me", response_model=MeOut)
 def api_me(me: MeOut = Depends(get_current_user)):
-    return me
+    # get_current_user를 username/is_verified까지 채우도록 살짝 수정
+    # (간단히 다시 조회)
+    row = get_user_by_email(me.email)
+    return MeOut(id=row[0], email=row[1], username=row[4], role=row[3], is_verified=row[5])
 
 # ---------- 제출 생성 라우트 수정 ----------
 from backend.schemas import SubmissionCreate  # 기존 Pydantic 입력 모델

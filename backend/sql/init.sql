@@ -1,10 +1,16 @@
 CREATE TABLE IF NOT EXISTS users (
-  id         BIGSERIAL PRIMARY KEY,
-  email      TEXT UNIQUE NOT NULL,
-  pwd_hash   TEXT NOT NULL,
-  role       TEXT NOT NULL DEFAULT 'student',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id             BIGSERIAL PRIMARY KEY,
+  email          TEXT UNIQUE NOT NULL,
+  pwd_hash       TEXT NOT NULL,
+  username       TEXT NOT NULL,
+  role           TEXT NOT NULL DEFAULT 'student',
+  is_verified    BOOLEAN NOT NULL DEFAULT FALSE,
+  verify_token   TEXT,
+  verify_expires TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_verify_token ON users(verify_token);
 
 CREATE TABLE IF NOT EXISTS problems (
   id           BIGSERIAL PRIMARY KEY,

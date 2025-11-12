@@ -15,8 +15,9 @@ export default function LoginPage() {
       localStorage.setItem("access_token", r.data.access_token);
       setMsg("Logged in. Redirecting...");
       window.location.href = "/"; // 또는 문제 목록으로
-    } catch {
-      setMsg("Login failed");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      setMsg(detail ?? "Login failed");
     } finally {
       setLoading(false);
     }
