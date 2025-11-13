@@ -174,6 +174,61 @@ def _format_sample_value(raw: str) -> tuple[str, bool]:
 
     return fmt(data), True
 
+def _parse_csv_testcases(content: bytes):
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded") from None
+
+    reader = csv.DictReader(io.StringIO(text))
+    required_cols = {"idx", "input_text", "expected_text"}
+    if not required_cols.issubset({(col or "").strip() for col in reader.fieldnames or []}):
+        raise HTTPException(status_code=400, detail=f"CSV must contain headers: {', '.join(sorted(required_cols))}")
+
+    cases = []
+    seen_idx = set()
+    for row in reader:
+        line_no = reader.line_num
+        try:
+            idx_val = int(row.get("idx", "").strip())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Line {line_no}: idx must be an integer")
+        if idx_val in seen_idx:
+            raise HTTPException(status_code=400, detail=f"Line {line_no}: duplicate idx {idx_val} in upload")
+        seen_idx.add(idx_val)
+
+        input_text = row.get("input_text")
+        expected_text = row.get("expected_text")
+        if input_text is None or expected_text is None:
+            raise HTTPException(status_code=400, detail=f"Line {line_no}: input_text and expected_text are required")
+        input_text = input_text.strip("\n")
+        expected_text = expected_text.strip("\n")
+        timeout_raw = row.get("timeout_ms", "").strip()
+        points_raw = row.get("points", "").strip()
+        try:
+            timeout_ms = int(timeout_raw) if timeout_raw else 2000
+            points = int(points_raw) if points_raw else 1
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Line {line_no}: timeout_ms/points must be integers")
+        is_public = _str_to_bool(row.get("is_public"), default=False)
+
+        cases.append(
+            {
+                "idx": idx_val,
+                "input_text": input_text,
+                "expected_text": expected_text,
+                "timeout_ms": timeout_ms,
+                "points": points,
+                "is_public": is_public,
+            }
+        )
+
+    if not cases:
+        raise HTTPException(status_code=400, detail="CSV contains no data rows")
+    return cases
+
 # ---------- 인증 라우트 ----------
 DEV_ECHO_VERIFY_TOKEN = os.getenv("DEV_ECHO_VERIFY_TOKEN", "1") == "1"  # 개발용: 토큰을 응답에 노출
 VERIFY_BASE_URL = os.getenv("VERIFY_BASE_URL", "http://127.0.0.1:8000")
@@ -355,11 +410,23 @@ def get_problem(pid: int, me: MeOut | None = Depends(get_optional_user)):
         )
 
 # ---------- 관리자/교사 기능 ----------
+@app.get("/admin/problems", response_model=List[Problem])
+def admin_list_public_problems(me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"admin"})
+    probs = logic.list_problems()
+    return [Problem(**p) for p in probs]
+
 @app.post("/admin/problems")
 def admin_create_problem(data: ProblemCreate, me: MeOut = Depends(get_current_user)):
-    ensure_role(me, {"admin", "teacher"})
+    ensure_role(me, {"admin"})
     pid = logic.create_problem(data, author_id=me.id)
     return {"problem_id": pid}
+
+@app.delete("/admin/problems/{pid}")
+def admin_delete_problem(pid: int, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"admin"})
+    logic.delete_problem(pid)
+    return {"detail": "problem_deleted"}
 
 @app.post("/admin/teacher-assign")
 def admin_assign_teacher(payload: TeacherAssignIn, me: MeOut = Depends(get_current_user)):
@@ -640,59 +707,21 @@ async def teacher_upload_testcases(
         raise HTTPException(status_code=400, detail="Problem is not assigned to this class")
 
     content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
-    try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded") from None
+    cases = _parse_csv_testcases(content)
 
-    reader = csv.DictReader(io.StringIO(text))
-    required_cols = {"idx", "input_text", "expected_text"}
-    if not required_cols.issubset({(col or "").strip() for col in reader.fieldnames or []}):
-        raise HTTPException(status_code=400, detail=f"CSV must contain headers: {', '.join(sorted(required_cols))}")
+    logic.store_problem_testcases(problem_id, cases, replace_existing=replace)
+    return {"detail": "testcases_uploaded", "count": len(cases), "replace_existing": replace}
 
-    cases = []
-    seen_idx = set()
-    for row in reader:
-        line_no = reader.line_num
-        try:
-            idx_val = int(row.get("idx", "").strip())
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Line {line_no}: idx must be an integer")
-        if idx_val in seen_idx:
-            raise HTTPException(status_code=400, detail=f"Line {line_no}: duplicate idx {idx_val} in upload")
-        seen_idx.add(idx_val)
-
-        input_text = row.get("input_text")
-        expected_text = row.get("expected_text")
-        if input_text is None or expected_text is None:
-            raise HTTPException(status_code=400, detail=f"Line {line_no}: input_text and expected_text are required")
-        input_text = input_text.strip("\n")
-        expected_text = expected_text.strip("\n")
-        timeout_raw = row.get("timeout_ms", "").strip()
-        points_raw = row.get("points", "").strip()
-        try:
-            timeout_ms = int(timeout_raw) if timeout_raw else 2000
-            points = int(points_raw) if points_raw else 1
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Line {line_no}: timeout_ms/points must be integers")
-        is_public = _str_to_bool(row.get("is_public"), default=False)
-
-        cases.append(
-            {
-                "idx": idx_val,
-                "input_text": input_text,
-                "expected_text": expected_text,
-                "timeout_ms": timeout_ms,
-                "points": points,
-                "is_public": is_public,
-            }
-        )
-
-    if not cases:
-        raise HTTPException(status_code=400, detail="CSV contains no data rows")
-
+@app.post("/admin/problems/{problem_id}/testcases/upload")
+async def admin_upload_testcases(
+    problem_id: int,
+    replace: bool = Form(True),
+    file: UploadFile = File(...),
+    me: MeOut = Depends(get_current_user),
+):
+    ensure_role(me, {"admin"})
+    content = await file.read()
+    cases = _parse_csv_testcases(content)
     logic.store_problem_testcases(problem_id, cases, replace_existing=replace)
     return {"detail": "testcases_uploaded", "count": len(cases), "replace_existing": replace}
 

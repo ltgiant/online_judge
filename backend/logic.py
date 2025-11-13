@@ -465,3 +465,7 @@ def user_solved_problem(user_id: int, problem_id: int) -> bool:
             LIMIT 1
         """, (user_id, problem_id))
         return cur.fetchone() is not None
+
+def delete_problem(problem_id: int):
+    with DB() as cur:
+        cur.execute("DELETE FROM problems WHERE id=%s", (problem_id,))

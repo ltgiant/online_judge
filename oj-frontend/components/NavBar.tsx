@@ -20,16 +20,23 @@ export default function NavBar() {
         <nav className="flex items-center gap-4 text-sm">
           <Link href="/problems" className="hover:underline">Problems</Link>
           {!loading && me && (
-            <Link
-              href={
-                me.role === "teacher" || me.role === "admin"
-                  ? "/teacher/classes"
-                  : "/student/classes"
-              }
-              className="hover:underline"
-            >
-              Classes
-            </Link>
+            <>
+              <Link
+                href={
+                  me.role === "teacher" || me.role === "admin"
+                    ? "/teacher/classes"
+                    : "/student/classes"
+                }
+                className="hover:underline"
+              >
+                Classes
+              </Link>
+              {me.role === "admin" && (
+                <Link href="/admin/public" className="hover:underline">
+                  Public
+                </Link>
+              )}
+            </>
           )}
           {!loading && !me && (
             <>
