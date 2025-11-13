@@ -28,7 +28,7 @@ from backend.auth import (
     create_user_with_verify,
     consume_verify_token,
 )
-from backend.emailer import send_verify_email, SMTPConfigError
+from backend.emailer import send_verify_email, SMTPConfigError, is_smtp_configured
 from backend.schemas import SubmissionCreate, ProblemCreate  # import early for type usage
 
 logger = logging.getLogger(__name__)
@@ -42,11 +42,14 @@ app = FastAPI(title="OJ Backend (MVP)")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=False,     # 쿠키 안 쓰면 False
-    allow_methods=["*"],         # 반드시 OPTIONS 포함
-    allow_headers=["*"],         # Authorization, Content-Type 등 모두 허용
-    max_age=86400,               # (선택) 프리플라이트 캐시
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://35.216.0.27:3000",  # GCE 외부 IP:3000 추가
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],   # OPTIONS 포함
+    allow_headers=["*"],   # Authorization, Content-Type 등
 )
 # ---------- 인증 스키마 ----------
 class RegisterIn(BaseModel):
@@ -245,10 +248,10 @@ def api_register(inp: RegisterIn):
     uid, token, exp = create_user_with_verify(inp.email, inp.username, inp.password)
     verify_url = build_verify_url(token)
 
-    smtp_host = (os.getenv("SMTP_HOST") or "").strip()
+    smtp_configured = is_smtp_configured()
     smtp_error: Exception | None = None
 
-    if smtp_host:
+    if smtp_configured:
         try:
             send_verify_email(inp.email, verify_url)
         except SMTPConfigError as cfg_err:
@@ -275,7 +278,7 @@ def api_register(inp: RegisterIn):
     if smtp_error:
         payload["email_delivery"] = "failed"
         payload["email_error"] = str(smtp_error)
-    elif smtp_host:
+    elif smtp_configured:
         payload["email_delivery"] = "sent"
     else:
         payload["email_delivery"] = "dev_echo"

@@ -87,6 +87,7 @@ def run_python_answer(source_code: str, payload: dict | list, timeout_ms: int):
                 capture_output=True,
                 text=True,
                 timeout=timeout_ms / 1000.0,
+                cwd=td,  # ← 이 줄 추가!
             )
             elapsed = int((time.time() - start) * 1000)
             return proc.returncode, proc.stdout, proc.stderr, elapsed
