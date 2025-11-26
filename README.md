@@ -83,9 +83,9 @@ psql "host=localhost dbname=oj user=oj password=ojpass" -f backend/sql/init.sql
 
 ### 2. Backend (FastAPI)
 ```bash
+#source .venv/bin/activate
 cd backend
-conda activate oj      # or your venv
-pip install -r ../requirements.txt
+pip install -r requirements.txt
 uvicorn app:app --reload
 ```
 → Runs on http://127.0.0.1:8000
@@ -107,6 +107,20 @@ npm install
 npm run dev
 ```
 → Opens on http://localhost:3000
+
+⸻
+
+### 협업/권한 설정 (서버에서 함께 사용할 때)
+
+- 프로젝트 위치: `/srv/myapp/online_judge`. 함께 쓰는 계정들이 같은 그룹(예: `dev`)에 속해 있어야 합니다. `id` 로 현재 그룹을 확인하고, 필요하면 `sudo usermod -aG dev <username>` 으로 추가합니다.
+- 리포지토리 및 생성물(.next, node_modules 등)에 그룹 쓰기 권한을 부여합니다:
+  ```bash
+  sudo chgrp -R dev /srv/myapp/online_judge
+  sudo chmod -R g+rwX /srv/myapp/online_judge
+  sudo find /srv/myapp/online_judge -type d -exec chmod g+s {} \;
+  ```
+  `g+s`를 적용하면 새로 생기는 파일/폴더도 자동으로 같은 그룹을 상속합니다.
+- 에러 예시: Turbopack/Next.js가 lockfile을 만들지 못해 `Permission denied (os error 13)`가 뜰 때 위 권한을 점검하세요.
 
 ⸻
 
