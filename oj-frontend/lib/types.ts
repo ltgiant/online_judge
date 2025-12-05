@@ -5,14 +5,23 @@ export type Problem = {
     difficulty: "easy" | "medium" | "hard";
   };
   
-  export type ProblemDetail = {
+export type ProblemDetail = {
     id: number;
     slug: string;
     title: string;
     difficulty: "easy" | "medium" | "hard";
     statement_md: string;
+    starter_code?: string | null;
     public_samples: { idx: number; input_text: string; expected_text: string }[];
   };
+
+export type ProblemCreatePayload = {
+  slug: string;
+  title: string;
+  difficulty: "easy" | "medium" | "hard";
+  statement_md: string;
+  starter_code?: string | null;
+};
   
   export type SubmissionSummary = {
     id: number;
@@ -77,4 +86,17 @@ export type ClassSubmission = {
   problem_id: number;
   problem_title: string;
   problem_slug: string;
+};
+
+export type ClassStudentSubmission = {
+  id: number;
+  problem_id: number;
+  problem_title: string;
+  problem_slug: string;
+  status: string;
+  score: number;
+  time_ms: number;
+  created_at: string | null;
+  finished_at: string | null;
+  source_code: string;
 };

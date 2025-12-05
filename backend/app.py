@@ -350,13 +350,26 @@ class ProblemDetail(Problem):
     statement_md: str
     public_samples: list[dict]
     expects_json: bool = False
+    starter_code: str | None = None
+
+class ProblemUpdateIn(BaseModel):
+    title: str | None = None
+    difficulty: str | None = Field(default=None, pattern="^(easy|medium|hard)$")
+    statement_md: str | None = None
+    starter_code: str | None = None
+
+    @model_validator(mode="after")
+    def at_least_one(cls, values):
+        if not any(values.__dict__.values()):
+            raise ValueError("At least one field must be provided")
+        return values
 
 @app.get("/problems/{pid}", response_model=ProblemDetail)
 def get_problem(pid: int, me: MeOut | None = Depends(get_optional_user)):
     """특정 문제 상세 (공개 + 공개 샘플만)"""
     with DB() as cur:
         cur.execute(
-            "SELECT id, slug, title, difficulty, statement_md FROM problems WHERE id=%s",
+            "SELECT id, slug, title, difficulty, statement_md, starter_code FROM problems WHERE id=%s",
             (pid,),
         )
         r = cur.fetchone()
@@ -410,6 +423,7 @@ def get_problem(pid: int, me: MeOut | None = Depends(get_optional_user)):
             statement_md=r[4],
             public_samples=samples,
             expects_json=expects_json,
+            starter_code=r[5],
         )
 
 # ---------- 관리자/교사 기능 ----------
@@ -620,6 +634,38 @@ def teacher_remove_problem_from_class(class_id: int, problem_id: int, me: MeOut 
     logic.remove_problem_from_class(class_id, problem_id)
     return {"detail": "problem_removed"}
 
+@app.put("/teacher/classes/{class_id}/problems/{problem_id}")
+def teacher_update_problem(
+    class_id: int,
+    problem_id: int,
+    payload: ProblemUpdateIn,
+    me: MeOut = Depends(get_current_user),
+):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not logic.class_has_problem(class_id, problem_id):
+        raise HTTPException(status_code=404, detail="Problem not in class")
+
+    updates = {}
+    if payload.title is not None:
+        updates["title"] = payload.title
+    if payload.difficulty is not None:
+        updates["difficulty"] = payload.difficulty
+    if payload.statement_md is not None:
+        updates["statement_md"] = payload.statement_md
+    if payload.starter_code is not None:
+        updates["starter_code"] = payload.starter_code
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    logic.update_problem(problem_id, **updates)
+    return {"detail": "problem_updated"}
+
 @app.get("/student/classes")
 def student_list_classes(me: MeOut = Depends(get_current_user)):
     ensure_role(me, {"student"})
@@ -754,6 +800,42 @@ def teacher_list_class_submissions(class_id: int, me: MeOut = Depends(get_curren
         }
         for s in submissions
     ]
+
+@app.get("/teacher/classes/{class_id}/students/{student_id}/submissions")
+def teacher_student_submissions_in_class(class_id: int, student_id: int, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not logic.student_in_class(student_id, class_id):
+        raise HTTPException(status_code=403, detail="Student not in class")
+    student = get_user_by_id(student_id)
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    submissions = logic.list_class_submissions_for_student(class_id, student_id)
+    return {
+        "student_id": student_id,
+        "student_email": student[1],
+        "student_username": student[4],
+        "class_id": class_id,
+        "submissions": [
+            {
+                "id": s["id"],
+                "problem_id": s["problem_id"],
+                "problem_title": s["problem_title"],
+                "problem_slug": s["problem_slug"],
+                "status": s["status"],
+                "score": s["score"],
+                "time_ms": s["time_ms"],
+                "created_at": _to_iso(s["created_at"]),
+                "finished_at": _to_iso(s["finished_at"]),
+                "source_code": s["source_code"],
+            }
+            for s in submissions
+        ],
+    }
 # ---------- 제출 조회/결과 ----------
 from datetime import timezone
 

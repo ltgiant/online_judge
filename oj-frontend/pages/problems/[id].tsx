@@ -34,18 +34,19 @@ const statusClass = (s: SubmissionSummary["status"]) =>
     s === "system_error" && "bg-slate-100 text-slate-700"
   );
 
+const DEFAULT_CODE = `def answer(n: int, nums: list[int], target: int) -> tuple[int, int]:
+    # TODO: implement
+    return (0, 0)
+`;
+
 export default function ProblemPage() {
   const router = useRouter();
   const { id } = router.query;
   const pid = Number(Array.isArray(id) ? id[0] : id);
 
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
-  const [code, setCode] = useState<string>(
-    `def answer(n: int, nums: list[int], target: int) -> tuple[int, int]:
-    # TODO: implement
-    return (0, 0)
-`
-  );
+  const [code, setCode] = useState<string>(DEFAULT_CODE);
+  const [codeInitialized, setCodeInitialized] = useState(false);
   const [subId, setSubId] = useState<number | null>(null);
   const [status, setStatus] = useState<SubmissionSummary["status"] | null>(null);
   const [results, setResults] = useState<SubmissionResult[] | null>(null);
@@ -87,7 +88,20 @@ export default function ProblemPage() {
       })
       .catch(() => setMySubs([]))
       .finally(() => setLoadingMySubs(false));
-  }, [me, pid]);
+    }, [me, pid]);
+
+  // 문제 starter_code 로드 후 에디터 초기화 (사용자가 수정했다면 덮어쓰지 않도록 1회만)
+  useEffect(() => {
+    if (!Number.isFinite(pid)) return;
+    setCode(DEFAULT_CODE);
+    setCodeInitialized(false);
+  }, [pid]);
+
+  useEffect(() => {
+    if (!problem || codeInitialized) return;
+    setCode(problem.starter_code || DEFAULT_CODE);
+    setCodeInitialized(true);
+  }, [problem, codeInitialized]);
 
   // 제출
   const submit = useCallback(async () => {

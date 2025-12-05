@@ -21,7 +21,8 @@ export default function SignupPage() {
   const [verifyInfo, setVerifyInfo] = useState<RegisterResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const signup = async () => {
+  const signup = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setLoading(true);
     setMsg(null);
     setVerifyInfo(null);
@@ -66,7 +67,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="mx-auto max-w-md space-y-3">
+    <form className="mx-auto max-w-md space-y-3" onSubmit={signup}>
       <h1 className="text-xl font-bold">Sign up</h1>
       <input
         className="w-full rounded border p-2"
@@ -95,7 +96,7 @@ export default function SignupPage() {
         onChange={(e) => setPwConfirm(e.target.value)}
       />
       <button
-        onClick={signup}
+        type="submit"
         disabled={loading}
         className="rounded bg-green-600 px-4 py-2 text-white"
       >
@@ -116,6 +117,6 @@ export default function SignupPage() {
           Login
         </Link>
       </div>
-    </div>
+    </form>
   );
 }

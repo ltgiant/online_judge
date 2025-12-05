@@ -16,22 +16,22 @@ def list_problems():
 
 def get_problem(pid: int):
     with DB() as cur:
-        cur.execute("SELECT id, slug, title, difficulty, statement_md FROM problems WHERE id=%s", (pid,))
+        cur.execute("SELECT id, slug, title, difficulty, statement_md, starter_code FROM problems WHERE id=%s", (pid,))
         row = cur.fetchone()
         if not row: return None
         cur.execute("SELECT idx, input_text, expected_text FROM testcases WHERE problem_id=%s AND is_public=TRUE ORDER BY idx", (pid,))
         pub_tcs = [{"idx": r[0], "input_text": r[1], "expected_text": r[2]} for r in cur.fetchall()]
         return {
             "id": row[0], "slug": row[1], "title": row[2], "difficulty": row[3],
-            "statement_md": row[4], "public_samples": pub_tcs
+            "statement_md": row[4], "starter_code": row[5], "public_samples": pub_tcs
         }
 
 def create_problem(data, author_id=None):
     with DB() as cur:
         cur.execute("""
-          INSERT INTO problems(slug, title, difficulty, statement_md, created_by)
-          VALUES (%s,%s,%s,%s,%s) RETURNING id
-        """, (data.slug, data.title, data.difficulty, data.statement_md, author_id))
+          INSERT INTO problems(slug, title, difficulty, statement_md, starter_code, created_by)
+          VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
+        """, (data.slug, data.title, data.difficulty, data.statement_md, getattr(data, "starter_code", None), author_id))
         return cur.fetchone()[0]
 
 def add_testcase(data):
@@ -349,6 +349,36 @@ def list_class_submissions(class_id: int):
             for r in cur.fetchall()
         ]
 
+def list_class_submissions_for_student(class_id: int, student_id: int):
+    with DB() as cur:
+        cur.execute("""
+            SELECT s.id, s.problem_id, p.title, p.slug,
+                   s.status, s.score, s.time_ms, s.created_at, s.finished_at,
+                   s.source_code
+            FROM submissions s
+            JOIN class_students cs ON cs.student_id = s.user_id AND cs.class_id = %s
+            JOIN class_problems cp ON cp.class_id = cs.class_id AND cp.problem_id = s.problem_id
+            JOIN problems p ON p.id = s.problem_id
+            WHERE s.user_id = %s
+            ORDER BY s.created_at DESC
+            LIMIT 200
+        """, (class_id, student_id))
+        return [
+            {
+                "id": r[0],
+                "problem_id": r[1],
+                "problem_title": r[2],
+                "problem_slug": r[3],
+                "status": r[4],
+                "score": r[5],
+                "time_ms": r[6],
+                "created_at": r[7],
+                "finished_at": r[8],
+                "source_code": r[9],
+            }
+            for r in cur.fetchall()
+        ]
+
 def store_problem_testcases(problem_id: int, testcases: list[dict], *, replace_existing: bool):
     with DB() as cur:
         if replace_existing:
@@ -469,3 +499,19 @@ def user_solved_problem(user_id: int, problem_id: int) -> bool:
 def delete_problem(problem_id: int):
     with DB() as cur:
         cur.execute("DELETE FROM problems WHERE id=%s", (problem_id,))
+
+def update_problem(problem_id: int, **fields):
+    if not fields:
+        return
+    columns = []
+    params = []
+    for key in ("title", "difficulty", "statement_md", "starter_code"):
+        if key in fields and fields[key] is not None:
+            columns.append(f"{key}=%s")
+            params.append(fields[key])
+    if not columns:
+        return
+    columns.append("updated_at=NOW()")
+    params.append(problem_id)
+    with DB() as cur:
+        cur.execute(f"UPDATE problems SET {', '.join(columns)} WHERE id=%s", tuple(params))

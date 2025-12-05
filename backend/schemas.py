@@ -6,6 +6,7 @@ class ProblemCreate(BaseModel):
     title: str
     difficulty: str = Field(pattern="^(easy|medium|hard)$")
     statement_md: str
+    starter_code: str | None = None
 
 class TestcaseCreate(BaseModel):
     problem_id: int

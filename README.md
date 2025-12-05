@@ -86,9 +86,9 @@ psql "host=localhost dbname=oj user=oj password=ojpass" -f backend/sql/init.sql
 #source .venv/bin/activate
 cd backend
 pip install -r requirements.txt
-uvicorn app:app --reload
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
-→ Runs on http://127.0.0.1:8000
+→ Runs on http://0.0.0.0:8000
 
 ⸻
 
@@ -104,7 +104,7 @@ python worker.py
 ```bash
 cd oj-frontend
 npm install
-npm run dev
+npm run dev -- --hostname 0.0.0.0 --port 3000
 ```
 → Opens on http://localhost:3000
 

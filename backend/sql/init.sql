@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS problems (
   title        TEXT NOT NULL,
   difficulty   TEXT CHECK (difficulty IN ('easy','medium','hard')) NOT NULL,
   statement_md TEXT NOT NULL,
+  starter_code TEXT,
   languages    TEXT[] NOT NULL DEFAULT ARRAY['python'],
   created_by   BIGINT REFERENCES users(id) ON DELETE CASCADE,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),

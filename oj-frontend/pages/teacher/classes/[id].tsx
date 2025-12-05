@@ -2,7 +2,13 @@ import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { useMe } from "@/lib/useMe";
-import type { ClassProblem, ClassSubmission, TeacherClassDetail } from "@/lib/types";
+import type {
+  ClassProblem,
+  ClassSubmission,
+  TeacherClassDetail,
+  ProblemCreatePayload,
+  ProblemDetail,
+} from "@/lib/types";
 
 export default function TeacherClassDetailPage() {
   const router = useRouter();
@@ -15,18 +21,25 @@ export default function TeacherClassDetailPage() {
   const [classSubmissions, setClassSubmissions] = useState<ClassSubmission[]>([]);
   const [studentEmail, setStudentEmail] = useState("");
   const [teacherEmail, setTeacherEmail] = useState("");
-  const [existingProblemId, setExistingProblemId] = useState("");
-  const [newProblem, setNewProblem] = useState({
+  const DEFAULT_STARTER = `def answer(...):
+    # TODO: implement
+    return None
+`;
+  const [newProblem, setNewProblem] = useState<ProblemCreatePayload>({
     slug: "",
     title: "",
     difficulty: "easy",
     statement_md: "",
+    starter_code: DEFAULT_STARTER,
   });
   const [csvProblemId, setCsvProblemId] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [manageProblem, setManageProblem] = useState<ProblemDetail | null>(null);
+  const [manageLoading, setManageLoading] = useState(false);
+  const [manageError, setManageError] = useState<string | null>(null);
 
   const isTeacher = me && (me.role === "teacher" || me.role === "admin");
 
@@ -112,33 +125,9 @@ export default function TeacherClassDetailPage() {
     }
   };
 
-  const handleAssignExistingProblem = async () => {
-    if (!Number.isInteger(classId)) return;
-    if (!existingProblemId.trim()) {
-      setError("Problem ID is required");
-      return;
-    }
-    const problemIdNumber = Number(existingProblemId);
-    if (!Number.isInteger(problemIdNumber) || problemIdNumber <= 0) {
-      setError("Problem ID must be a positive integer");
-      return;
-    }
-    try {
-      await api.post(`/teacher/classes/${classId}/problems`, {
-        problem_id: problemIdNumber,
-      });
-      setStatus("Problem assigned to class");
-      setExistingProblemId("");
-      setError(null);
-      await fetchClassProblems();
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Failed to assign problem");
-    }
-  };
-
   const handleCreateProblemForClass = async () => {
     if (!Number.isInteger(classId)) return;
-    const { slug, title, difficulty, statement_md } = newProblem;
+    const { slug, title, difficulty, statement_md, starter_code } = newProblem;
     if (!slug.trim() || !title.trim() || !statement_md.trim()) {
       setError("Slug, title, and statement are required");
       return;
@@ -150,6 +139,7 @@ export default function TeacherClassDetailPage() {
           title: title.trim(),
           difficulty,
           statement_md: statement_md.trim(),
+          starter_code: starter_code?.trim() || undefined,
         },
       });
       setStatus("Problem created & assigned to class");
@@ -157,12 +147,65 @@ export default function TeacherClassDetailPage() {
         slug: "",
         title: "",
         difficulty: "easy",
-        statement_md: "",
+        statement_md: "# Problem statement\n\nDescribe the problem here.",
+        starter_code: DEFAULT_STARTER,
       });
       setError(null);
       await fetchClassProblems();
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? "Failed to create problem");
+    }
+  };
+
+  const fetchManageProblem = async (problemId: number) => {
+    setManageLoading(true);
+    setManageError(null);
+    try {
+      const { data } = await api.get<ProblemDetail>(`/problems/${problemId}`);
+      setManageProblem(data);
+    } catch (e: any) {
+      setManageError(e?.response?.data?.detail ?? "Failed to load problem details");
+      setManageProblem(null);
+    } finally {
+      setManageLoading(false);
+    }
+  };
+
+  const handleUpdateProblem = async () => {
+    if (!Number.isInteger(classId)) return;
+    if (!csvProblemId) {
+      setError("Select a problem to manage.");
+      return;
+    }
+    if (!manageProblem) {
+      setError("Load a problem to manage first.");
+      return;
+    }
+    try {
+      await api.put(`/teacher/classes/${classId}/problems/${csvProblemId}`, {
+        title: manageProblem.title,
+        difficulty: manageProblem.difficulty,
+        statement_md: manageProblem.statement_md,
+        starter_code: manageProblem.starter_code,
+      });
+      setStatus("Problem updated");
+      setError(null);
+      await fetchClassProblems();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? "Failed to update problem");
+    }
+  };
+
+  const handleRemoveProblem = async (problemId: number, title: string) => {
+    if (!Number.isInteger(classId)) return;
+    if (!confirm(`Remove "${title}" from this class?`)) return;
+    try {
+      await api.delete(`/teacher/classes/${classId}/problems/${problemId}`);
+      setStatus("Problem removed from class");
+      setError(null);
+      await fetchClassProblems();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? "Failed to remove problem");
     }
   };
 
@@ -278,7 +321,7 @@ export default function TeacherClassDetailPage() {
                   <tr>
                     <th className="px-2 py-1">Name</th>
                     <th className="px-2 py-1">Email</th>
-                    <th className="px-2 py-1">Status</th>
+                    <th className="px-2 py-1 text-right">Submissions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -286,12 +329,13 @@ export default function TeacherClassDetailPage() {
                     <tr key={s.id} className="border-t">
                       <td className="px-2 py-1">{s.username ?? "-"}</td>
                       <td className="px-2 py-1">{s.email}</td>
-                      <td className="px-2 py-1">
-                        {s.is_verified ? (
-                          <span className="text-xs text-green-600">verified</span>
-                        ) : (
-                          <span className="text-xs text-amber-600">pending</span>
-                        )}
+                      <td className="px-2 py-1 text-right">
+                        <button
+                          className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                          onClick={() => router.push(`/teacher/classes/${classId}/students/${s.id}/submissions`)}
+                        >
+                          {s.username ?? s.email}'s submissions
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -321,17 +365,40 @@ export default function TeacherClassDetailPage() {
         <ul className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
           {classProblems.map((p) => (
             <li key={p.id} className="rounded border border-gray-200 p-2 bg-gray-50">
-              <div className="font-semibold">
-                {p.title} <span className="text-xs text-gray-500">(# {p.id})</span>
-              </div>
-              <div className="text-xs text-gray-500">
-                Slug: {p.slug} · Difficulty: {p.difficulty}
-              </div>
-              {p.assigned_by_name && (
-                <div className="text-xs text-gray-500">
-                  Assigned by {p.assigned_by_name}
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold">
+                    {p.title} <span className="text-xs text-gray-500">(# {p.id})</span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Slug: {p.slug} · Difficulty: {p.difficulty}
+                  </div>
+                  {p.assigned_by_name && (
+                    <div className="text-xs text-gray-500">
+                      Assigned by {p.assigned_by_name}
+                    </div>
+                  )}
                 </div>
-              )}
+                <div className="flex flex-col items-end gap-1">
+                  <button
+                    className="rounded border px-2 py-1 text-xs hover:bg-white"
+                    onClick={() => {
+                      setStatus(null);
+                      setError(null);
+                      setCsvProblemId(String(p.id));
+                      void fetchManageProblem(p.id);
+                    }}
+                  >
+                    Manage
+                  </button>
+                  <button
+                    className="rounded border border-red-500 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                    onClick={() => handleRemoveProblem(p.id, p.title)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
             </li>
           ))}
           {classProblems.length === 0 && (
@@ -339,44 +406,11 @@ export default function TeacherClassDetailPage() {
           )}
         </ul>
         <div className="mt-4 space-y-2">
-          <div className="flex gap-2">
-            <input
-              className="w-full rounded border p-2 text-sm"
-              placeholder="Assign existing problem by ID"
-              value={existingProblemId}
-              onChange={(e) => setExistingProblemId(e.target.value)}
-            />
-            <button
-              onClick={handleAssignExistingProblem}
-              className="rounded border px-3 py-2 text-xs hover:bg-gray-50"
-            >
-              Assign
-            </button>
-            <button
-              className="rounded border border-red-500 px-3 py-2 text-xs text-red-600 hover:bg-red-50"
-              disabled={!classProblems.length}
-              onClick={async () => {
-                if (!Number.isInteger(classId)) return;
-                if (!existingProblemId.trim()) {
-                  setError("Enter the problem ID you want to remove.");
-                  return;
-                }
-                if (!confirm("Remove this problem from the class?")) return;
-                try {
-                  await api.delete(`/teacher/classes/${classId}/problems/${existingProblemId}`);
-                  setStatus("Problem removed from class");
-                  setExistingProblemId("");
-                  await fetchClassProblems();
-                } catch (e: any) {
-                  setError(e?.response?.data?.detail ?? "Failed to remove problem");
-                }
-              }}
-            >
-              Remove
-            </button>
-          </div>
           <div className="rounded border p-3 text-xs space-y-2">
-            <div className="font-semibold text-gray-700">Create new problem for this class</div>
+            <div className="font-semibold text-gray-700">Create new problem (slug/title only)</div>
+            <p className="text-[11px] text-gray-500">
+              Difficulty defaults to easy, statement uses a placeholder. You can edit details later in Manage.
+            </p>
             <input
               className="w-full rounded border p-2"
               placeholder="Slug"
@@ -389,24 +423,6 @@ export default function TeacherClassDetailPage() {
               value={newProblem.title}
               onChange={(e) => setNewProblem((prev) => ({ ...prev, title: e.target.value }))}
             />
-            <select
-              className="w-full rounded border p-2"
-              value={newProblem.difficulty}
-              onChange={(e) => setNewProblem((prev) => ({ ...prev, difficulty: e.target.value }))}
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-            <textarea
-              className="w-full rounded border p-2"
-              rows={4}
-              placeholder="Problem statement (Markdown)"
-              value={newProblem.statement_md}
-              onChange={(e) =>
-                setNewProblem((prev) => ({ ...prev, statement_md: e.target.value }))
-              }
-            />
             <button
               onClick={handleCreateProblemForClass}
               className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
@@ -415,78 +431,99 @@ export default function TeacherClassDetailPage() {
             </button>
           </div>
           <div className="rounded border p-3 text-xs space-y-2">
-            <div className="font-semibold text-gray-700">Upload testcases (CSV)</div>
-            <select
-              className="w-full rounded border p-2"
-              value={csvProblemId}
-              onChange={(e) => setCsvProblemId(e.target.value)}
-            >
-              <option value="">Select a problem</option>
-              {classProblems.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              className="w-full rounded border p-2 text-sm"
-              onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
-            />
-            <label className="flex items-center gap-2 text-xs text-gray-700">
+            <div className="font-semibold text-gray-700">Manage selected problem</div>
+            {manageLoading && <div className="text-gray-500">Loading problem...</div>}
+            {manageError && <div className="text-red-600">{manageError}</div>}
+            {!manageProblem && !manageLoading && (
+              <div className="text-gray-500">Choose a problem with the Manage button above.</div>
+            )}
+            {manageProblem && (
+              <div className="space-y-2">
+                <div className="text-sm font-semibold">{manageProblem.title}</div>
+                <div className="text-xs text-gray-500">Slug: {manageProblem.slug}</div>
+                <select
+                  className="w-full rounded border p-2"
+                  value={manageProblem.difficulty}
+                  onChange={(e) =>
+                    setManageProblem((prev) =>
+                      prev ? { ...prev, difficulty: e.target.value as typeof manageProblem.difficulty } : prev
+                    )
+                  }
+                >
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+                <textarea
+                  className="w-full rounded border p-2"
+                  rows={4}
+                  placeholder="Problem statement (Markdown)"
+                  value={manageProblem.statement_md}
+                  onChange={(e) =>
+                    setManageProblem((prev) =>
+                      prev ? { ...prev, statement_md: e.target.value } : prev
+                    )
+                  }
+                />
+                <label className="text-xs font-semibold text-gray-700">Starter code</label>
+                <textarea
+                  className="w-full rounded border p-2 font-mono"
+                  rows={4}
+                  placeholder={`def answer(...):\n    # TODO: implement\n    return None`}
+                  value={manageProblem.starter_code ?? ""}
+                  onChange={(e) =>
+                    setManageProblem((prev) =>
+                      prev ? { ...prev, starter_code: e.target.value } : prev
+                    )
+                  }
+                />
+                <button
+                  onClick={handleUpdateProblem}
+                  className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+                  disabled={!manageProblem}
+                >
+                  Save changes
+                </button>
+              </div>
+            )}
+            <div className="pt-3 border-t">
+              <div className="font-semibold text-gray-700 mb-1">Upload testcases (CSV)</div>
               <input
-                type="checkbox"
-                checked={replaceExisting}
-                onChange={(e) => setReplaceExisting(e.target.checked)}
+                type="file"
+                accept=".csv,text/csv"
+                className="w-full rounded border p-2 text-sm"
+                onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
               />
-              Replace existing testcases
-            </label>
-            <button
-              onClick={handleUploadCsv}
-              className="w-full rounded bg-purple-600 px-3 py-2 text-xs font-semibold text-white"
-            >
-              Upload CSV
-            </button>
-            <p className="text-[11px] text-gray-500">
-              CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded border bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold">Recent Submissions</h2>
-        <div className="mt-3 max-h-64 overflow-y-auto text-xs">
-          <table className="w-full text-left text-gray-600">
-            <thead>
-              <tr className="text-gray-500">
-                <th className="px-2 py-1">Student</th>
-                <th className="px-2 py-1">Problem</th>
-                <th className="px-2 py-1">Status</th>
-                <th className="px-2 py-1">Score</th>
-                <th className="px-2 py-1">Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {classSubmissions.map((s) => (
-                <tr key={s.submission_id} className="border-t">
-                  <td className="px-2 py-1">{s.student_username}</td>
-                  <td className="px-2 py-1">{s.problem_title}</td>
-                  <td className="px-2 py-1">{s.status}</td>
-                  <td className="px-2 py-1">{s.score}</td>
-                  <td className="px-2 py-1">{s.time_ms ?? 0} ms</td>
-                </tr>
-              ))}
-              {classSubmissions.length === 0 && (
-                <tr>
-                  <td className="px-2 py-2 text-gray-500" colSpan={5}>
-                    No submissions yet.
-                  </td>
-                </tr>
+              <label className="flex items-center gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={replaceExisting}
+                  onChange={(e) => setReplaceExisting(e.target.checked)}
+                />
+                Replace existing testcases
+              </label>
+              <button
+                onClick={handleUploadCsv}
+                className="w-full rounded bg-purple-600 px-3 py-2 text-xs font-semibold text-white"
+                disabled={!csvProblemId}
+              >
+                Upload CSV
+              </button>
+              <p className="text-[11px] text-gray-500">
+                CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.
+              </p>
+              {manageProblem && (
+                <div className="flex justify-end">
+                  <button
+                    className="mt-2 inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-50"
+                    onClick={() => window.open(`/problems/${manageProblem.id}`, "_blank")}
+                  >
+                    Open student view ↗
+                  </button>
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
       </section>
 

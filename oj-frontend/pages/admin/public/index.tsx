@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import api from "@/lib/api";
 import { useMe } from "@/lib/useMe";
-import type { Problem } from "@/lib/types";
+import type { Problem, ProblemCreatePayload } from "@/lib/types";
 
 export default function AdminPublicProblemsPage() {
   const router = useRouter();
@@ -14,6 +14,11 @@ export default function AdminPublicProblemsPage() {
   const [statement, setStatement] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [starterCode, setStarterCode] = useState<string>(
+`def answer(...):
+    # TODO: implement
+    return None
+`);
 
   useEffect(() => {
     if (!loading && me?.role === "admin") {
@@ -35,17 +40,20 @@ export default function AdminPublicProblemsPage() {
       setError("Slug, title, and statement are required");
       return;
     }
+    const payload: ProblemCreatePayload = {
+      slug: slug.trim(),
+      title: title.trim(),
+      difficulty,
+      statement_md: statement,
+      starter_code: starterCode.trim() || undefined,
+    };
     try {
-      await api.post("/admin/problems", {
-        slug: slug.trim(),
-        title: title.trim(),
-        difficulty,
-        statement_md: statement,
-      });
+      await api.post("/admin/problems", payload);
       setStatus("Problem created");
       setSlug("");
       setTitle("");
       setStatement("");
+      setStarterCode(`def answer(...):\n    # TODO: implement\n    return None\n`);
       setError(null);
       await fetchProblems();
     } catch (e: any) {
@@ -113,6 +121,14 @@ export default function AdminPublicProblemsPage() {
           placeholder="Statement (Markdown)"
           value={statement}
           onChange={(e) => setStatement(e.target.value)}
+        />
+        <label className="text-sm font-medium text-gray-700">Starter Code (optional)</label>
+        <textarea
+          className="w-full rounded border p-2 text-sm font-mono"
+          rows={6}
+          placeholder={`def answer(...):\n    # TODO: implement\n    return None`}
+          value={starterCode}
+          onChange={(e) => setStarterCode(e.target.value)}
         />
         <button
           onClick={createProblem}

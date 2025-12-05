@@ -83,6 +83,7 @@ Metadata for each coding problem.
 | `title` | `text` | Problem name |
 | `difficulty` | `text` | Enum: `easy`, `medium`, `hard` |
 | `statement_md` | `text` | Markdown prompt |
+| `starter_code` | `text` | Optional starter/template code shown in the editor |
 | `languages` | `text[]` | Currently defaults to `{'python'}` |
 | `created_by` | `bigint` | FK → `users.id`, nullable for legacy rows |
 | `created_at`, `updated_at` | `timestamptz` | Audit timestamps |
