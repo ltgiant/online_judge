@@ -170,7 +170,7 @@ export default function ProblemPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="w-full px-2 sm:px-3 lg:px-4 py-6">
         {loading && <div className="text-gray-500">Loading…</div>}
 
         {error && (
@@ -186,7 +186,7 @@ export default function ProblemPage() {
         )}
 
         {!loading && problem && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4">
             {/* 문제 본문 */}
             <section className="space-y-4">
               <div className="flex items-center justify-between">
@@ -249,7 +249,7 @@ export default function ProblemPage() {
                 <div className="p-3">
                   <div className="overflow-hidden rounded-md border">
                     <MonacoEditor
-                      height="280px"
+                      height="420px"
                       defaultLanguage="python"
                       value={code}
                       onChange={(v) => setCode(v ?? "")}
