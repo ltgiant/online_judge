@@ -1,0 +1,21 @@
+[Unit]
+Description=Online Judge Backend (FastAPI)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oj
+Group=oj
+WorkingDirectory=/srv/myapp/online_judge/backend
+EnvironmentFile=/srv/myapp/online_judge/.env
+ExecStart=/srv/myapp/online_judge/.venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=3
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

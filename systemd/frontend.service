@@ -1,0 +1,22 @@
+[Unit]
+Description=Online Judge Frontend (Next.js)
+After=network-online.target backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oj
+Group=oj
+WorkingDirectory=/srv/myapp/online_judge/oj-frontend
+Environment=NODE_ENV=production
+EnvironmentFile=/srv/myapp/online_judge/oj-frontend/.env.local
+ExecStart=/usr/local/bin/npm run start -- --hostname 0.0.0.0 --port 3000
+Restart=on-failure
+RestartSec=3
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

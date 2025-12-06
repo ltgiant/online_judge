@@ -190,6 +190,26 @@ When you store JSON testcases for function-based grading, the frontend automatic
 
 ⸻
 
+### systemd 서비스 템플릿 (백엔드/프론트/워커 자동 기동)
+
+`systemd/` 폴더에 예시 유닛 파일(`backend.service`, `frontend.service`, `worker.service`)을 넣어두었습니다. `User/Group`, `WorkingDirectory`, 실행 경로(venv, node)와 환경파일 위치를 실제 경로에 맞게 수정하세요.
+
+1. 환경파일 준비: 백엔드는 `/etc/online-judge/backend.env`(DB/JWT/SMTP 등), 프론트는 `/etc/online-judge/frontend.env`(예: `NEXT_PUBLIC_API_BASE=...`, `PORT=3000` 등)을 만듭니다.  
+2. (추천) 프론트는 배포 시 `cd /srv/myapp/online_judge/oj-frontend && npm ci && npm run build` 로 미리 빌드합니다.  
+3. 유닛 설치/기동:
+   ```bash
+   sudo cp /srv/myapp/online_judge/systemd/*.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now backend.service frontend.service worker.service
+   ```
+4. 상태/로그 확인:
+   - 상태: `sudo systemctl status backend worker frontend`
+   - 실시간 로그: `sudo journalctl -u backend -f`, `sudo journalctl -u worker -f`, `sudo journalctl -u frontend -f`
+   - 최근 N줄: `sudo journalctl -u backend -n 200`
+   - 재부팅/SSH 끊김과 무관하게 유지: `enable --now`로 등록된 서비스는 부팅 시 자동 기동됩니다.
+
+⸻
+
 ### Authoring Problems & Testcases
 
 You can evaluate solutions in two ways:
@@ -222,94 +242,8 @@ Login
 ```bash
 curl -X POST http://127.0.0.1:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"test@x.com","password":"secret123"}'
-```
-
-Create a class (teacher/admin)
-```bash
-curl -X POST http://127.0.0.1:8000/teacher/classes \
-  -H "Authorization: Bearer <TEACHER_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Intro to Algorithms","description":"Spring cohort"}'
-```
-
-Assign a student to a teacher (admin only)
-```bash
-curl -X POST http://127.0.0.1:8000/admin/teacher-assign \
-  -H "Authorization: Bearer <ADMIN_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"teacher_id":2,"student_id":5}'
-```
-
-List submissions for a teacher's student
-```bash
-curl -X GET http://127.0.0.1:8000/teacher/students/5/submissions \
-  -H "Authorization: Bearer <TEACHER_TOKEN>"
-```
-
-Manage class membership
-```bash
-# Add student
-curl -X POST http://127.0.0.1:8000/teacher/classes/10/students \
-  -H "Authorization: Bearer <TEACHER_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"student_email":"student@example.com"}'
-
-# Add co-teacher
-curl -X POST http://127.0.0.1:8000/teacher/classes/10/teachers \
-  -H "Authorization: Bearer <TEACHER_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"teacher_email":"assistant@example.com"}'
-```
-
-Assign a problem to a class
-```bash
-curl -X POST http://127.0.0.1:8000/teacher/classes/10/problems \
-  -H "Authorization: Bearer <TEACHER_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"problem_id":42}'
-```
-
-Create a new problem directly in a class
-```bash
-curl -X POST http://127.0.0.1:8000/teacher/classes/10/problems \
-  -H "Authorization: Bearer <TEACHER_TOKEN>" \
-  -H "Content-Type: application/json" \
   -d '{
-        "new_problem": {
-          "slug": "sum-two-numbers",
-          "title": "Sum Two Numbers",
-          "difficulty": "easy",
-          "statement_md": "Given A and B..."
-        }
+        "email":"test@x.com",
+        "password":"secret123"
       }'
 ```
-
-List submissions for an entire class
-```bash
-curl -X GET http://127.0.0.1:8000/teacher/classes/10/submissions \
-  -H "Authorization: Bearer <TEACHER_TOKEN>"
-```
-
-⸻
-
-MVP Status
-
-- User auth
-- Problem list/detail
-- Code submission & judging
-- Result display
-Next steps → user submission history, admin panel, sandboxing
-
-⸻
-
-📝 License
-
-MIT License © 2025 [JihoonSeo]
-
-⸻
-
-Credits
-
-Built with using FastAPI & Next.js
-Inspired by Baekjoon, LeetCode, and AtCoder.

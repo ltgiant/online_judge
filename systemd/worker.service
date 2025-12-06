@@ -1,0 +1,21 @@
+[Unit]
+Description=Online Judge Worker (code runner)
+After=network-online.target backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oj
+Group=oj
+WorkingDirectory=/srv/myapp/online_judge/judge
+EnvironmentFile=/srv/myapp/online_judge/.env
+ExecStart=/srv/myapp/online_judge/.venv/bin/python worker.py
+Restart=always
+RestartSec=2
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
