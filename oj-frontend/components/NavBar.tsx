@@ -18,7 +18,9 @@ export default function NavBar() {
           Online Judge (MVP)
         </Link>
         <nav className="flex items-center gap-4 text-sm">
-          <Link href="/problems" className="hover:underline">Problems</Link>
+          {!loading && !!me && (
+            <Link href="/problems" className="hover:underline">Problems</Link>
+          )}
           {!loading && me && (
             <>
               <Link
