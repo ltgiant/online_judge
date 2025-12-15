@@ -40,6 +40,8 @@ export default function TeacherClassDetailPage() {
   const [manageProblem, setManageProblem] = useState<ProblemDetail | null>(null);
   const [manageLoading, setManageLoading] = useState(false);
   const [manageError, setManageError] = useState<string | null>(null);
+  const [manageVisible, setManageVisible] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   const isTeacher = me && (me.role === "teacher" || me.role === "admin");
 
@@ -150,6 +152,7 @@ export default function TeacherClassDetailPage() {
         statement_md: "# Problem statement\n\nDescribe the problem here.",
         starter_code: DEFAULT_STARTER,
       });
+      setShowCreateForm(false);
       setError(null);
       await fetchClassProblems();
     } catch (e: any) {
@@ -385,7 +388,14 @@ export default function TeacherClassDetailPage() {
                     onClick={() => {
                       setStatus(null);
                       setError(null);
+                      if (manageVisible && csvProblemId === String(p.id)) {
+                        setManageVisible(false);
+                        setManageProblem(null);
+                        setManageError(null);
+                        return;
+                      }
                       setCsvProblemId(String(p.id));
+                      setManageVisible(true);
                       void fetchManageProblem(p.id);
                     }}
                   >
@@ -406,124 +416,134 @@ export default function TeacherClassDetailPage() {
           )}
         </ul>
         <div className="mt-4 space-y-2">
-          <div className="rounded border p-3 text-xs space-y-2">
-            <div className="font-semibold text-gray-700">Create new problem (slug/title only)</div>
-            <p className="text-[11px] text-gray-500">
-              Difficulty defaults to easy, statement uses a placeholder. You can edit details later in Manage.
-            </p>
-            <input
-              className="w-full rounded border p-2"
-              placeholder="Slug"
-              value={newProblem.slug}
-              onChange={(e) => setNewProblem((prev) => ({ ...prev, slug: e.target.value }))}
-            />
-            <input
-              className="w-full rounded border p-2"
-              placeholder="Title"
-              value={newProblem.title}
-              onChange={(e) => setNewProblem((prev) => ({ ...prev, title: e.target.value }))}
-            />
-            <button
-              onClick={handleCreateProblemForClass}
-              className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
-            >
-              Create & assign
-            </button>
-          </div>
-          <div className="rounded border p-3 text-xs space-y-2">
-            <div className="font-semibold text-gray-700">Manage selected problem</div>
-            {manageLoading && <div className="text-gray-500">Loading problem...</div>}
-            {manageError && <div className="text-red-600">{manageError}</div>}
-            {!manageProblem && !manageLoading && (
-              <div className="text-gray-500">Choose a problem with the Manage button above.</div>
-            )}
-            {manageProblem && (
-              <div className="space-y-2">
-                <div className="text-sm font-semibold">{manageProblem.title}</div>
-                <div className="text-xs text-gray-500">Slug: {manageProblem.slug}</div>
-                <select
-                  className="w-full rounded border p-2"
-                  value={manageProblem.difficulty}
-                  onChange={(e) =>
-                    setManageProblem((prev) =>
-                      prev ? { ...prev, difficulty: e.target.value as typeof manageProblem.difficulty } : prev
-                    )
-                  }
-                >
-                  <option value="easy">Easy</option>
-                  <option value="medium">Medium</option>
-                  <option value="hard">Hard</option>
-                </select>
-                <textarea
-                  className="w-full rounded border p-2"
-                  rows={4}
-                  placeholder="Problem statement (Markdown)"
-                  value={manageProblem.statement_md}
-                  onChange={(e) =>
-                    setManageProblem((prev) =>
-                      prev ? { ...prev, statement_md: e.target.value } : prev
-                    )
-                  }
-                />
-                <label className="text-xs font-semibold text-gray-700">Starter code</label>
-                <textarea
-                  className="w-full rounded border p-2 font-mono"
-                  rows={4}
-                  placeholder={`def answer(...):\n    # TODO: implement\n    return None`}
-                  value={manageProblem.starter_code ?? ""}
-                  onChange={(e) =>
-                    setManageProblem((prev) =>
-                      prev ? { ...prev, starter_code: e.target.value } : prev
-                    )
-                  }
-                />
-                <button
-                  onClick={handleUpdateProblem}
-                  className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
-                  disabled={!manageProblem}
-                >
-                  Save changes
-                </button>
-              </div>
-            )}
-            <div className="pt-3 border-t">
-              <div className="font-semibold text-gray-700 mb-1">Upload testcases (CSV)</div>
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                className="w-full rounded border p-2 text-sm"
-                onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
-              />
-              <label className="flex items-center gap-2 text-xs text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={replaceExisting}
-                  onChange={(e) => setReplaceExisting(e.target.checked)}
-                />
-                Replace existing testcases
-              </label>
-              <button
-                onClick={handleUploadCsv}
-                className="w-full rounded bg-purple-600 px-3 py-2 text-xs font-semibold text-white"
-                disabled={!csvProblemId}
-              >
-                Upload CSV
-              </button>
+          <button
+            className="w-full rounded border px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-gray-50"
+            onClick={() => setShowCreateForm((prev) => !prev)}
+          >
+            {showCreateForm ? "Close create form" : "Create problem"}
+          </button>
+          {showCreateForm && (
+            <div className="rounded border p-3 text-xs space-y-2">
+              <div className="font-semibold text-gray-700">Create new problem (slug/title only)</div>
               <p className="text-[11px] text-gray-500">
-                CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.
+                Difficulty defaults to easy, statement uses a placeholder. You can edit details later in Manage.
               </p>
+              <input
+                className="w-full rounded border p-2"
+                placeholder="Slug"
+                value={newProblem.slug}
+                onChange={(e) => setNewProblem((prev) => ({ ...prev, slug: e.target.value }))}
+              />
+              <input
+                className="w-full rounded border p-2"
+                placeholder="Title"
+                value={newProblem.title}
+                onChange={(e) => setNewProblem((prev) => ({ ...prev, title: e.target.value }))}
+              />
+              <button
+                onClick={handleCreateProblemForClass}
+                className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+              >
+                Create & assign
+              </button>
+            </div>
+          )}
+          {manageVisible && (
+            <div className="rounded border p-3 text-xs space-y-2">
+              <div className="font-semibold text-gray-700">Manage selected problem</div>
+              {manageLoading && <div className="text-gray-500">Loading problem...</div>}
+              {manageError && <div className="text-red-600">{manageError}</div>}
+              {!manageProblem && !manageLoading && (
+                <div className="text-gray-500">Choose a problem with the Manage button above.</div>
+              )}
               {manageProblem && (
-                <div className="flex justify-end">
-                  <button
-                    className="mt-2 inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-50"
-                    onClick={() => window.open(`/problems/${manageProblem.id}`, "_blank")}
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold">{manageProblem.title}</div>
+                  <div className="text-xs text-gray-500">Slug: {manageProblem.slug}</div>
+                  <select
+                    className="w-full rounded border p-2"
+                    value={manageProblem.difficulty}
+                    onChange={(e) =>
+                      setManageProblem((prev) =>
+                        prev ? { ...prev, difficulty: e.target.value as typeof manageProblem.difficulty } : prev
+                      )
+                    }
                   >
-                    Open student view ↗
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                  <textarea
+                    className="w-full rounded border p-2"
+                    rows={4}
+                    placeholder="Problem statement (Markdown)"
+                    value={manageProblem.statement_md}
+                    onChange={(e) =>
+                      setManageProblem((prev) =>
+                        prev ? { ...prev, statement_md: e.target.value } : prev
+                      )
+                    }
+                  />
+                  <label className="text-xs font-semibold text-gray-700">Starter code</label>
+                  <textarea
+                    className="w-full rounded border p-2 font-mono"
+                    rows={4}
+                    placeholder={`def answer(...):\n    # TODO: implement\n    return None`}
+                    value={manageProblem.starter_code ?? ""}
+                    onChange={(e) =>
+                      setManageProblem((prev) =>
+                        prev ? { ...prev, starter_code: e.target.value } : prev
+                      )
+                    }
+                  />
+                  <button
+                    onClick={handleUpdateProblem}
+                    className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+                    disabled={!manageProblem}
+                  >
+                    Save changes
                   </button>
                 </div>
               )}
+              <div className="pt-3 border-t">
+                <div className="font-semibold text-gray-700 mb-1">Upload testcases (CSV)</div>
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="w-full rounded border p-2 text-sm"
+                  onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
+                />
+                <label className="flex items-center gap-2 text-xs text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={replaceExisting}
+                    onChange={(e) => setReplaceExisting(e.target.checked)}
+                  />
+                  Replace existing testcases
+                </label>
+                <button
+                  onClick={handleUploadCsv}
+                  className="w-full rounded bg-purple-600 px-3 py-2 text-xs font-semibold text-white"
+                  disabled={!csvProblemId}
+                >
+                  Upload CSV
+                </button>
+                <p className="text-[11px] text-gray-500">
+                  CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.
+                </p>
+                {manageProblem && (
+                  <div className="flex justify-end">
+                    <button
+                      className="mt-2 inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-50"
+                      onClick={() => window.open(`/problems/${manageProblem.id}`, "_blank")}
+                    >
+                      Open student view ↗
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </section>
 

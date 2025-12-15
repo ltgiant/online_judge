@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import secrets
+from typing import Any, Literal
 
 # Ensure project root on sys.path so "backend" package can be imported when running from backend/
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -18,6 +19,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile,
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from backend import logic
+from judge.runner_py import run_python, run_python_answer
 
 from backend.auth import (
     create_access_token,
@@ -79,6 +81,49 @@ class MeOut(BaseModel):
     username: str | None = None
     role: str
     is_verified: bool
+
+
+class RunReq(BaseModel):
+    source_code: str
+    payload: Any | None = None  # JSON payload for answer(*args, **kwargs)
+    stdin_text: str | None = None  # fallback raw stdin
+    timeout_ms: int = 2000
+
+
+class RunRes(BaseModel):
+    mode: Literal["payload", "stdin"]
+    result: Any | None
+    stdout: str
+    stderr: str
+    time_ms: int
+    return_code: int
+def _parse_payload_output(out: str) -> tuple[Any | None, str]:
+    """Try to extract result/stdout from harness output, tolerating leading noise."""
+    if not out:
+        return None, ""
+    # first try clean parse
+    try:
+        parsed = json.loads(out)
+        if isinstance(parsed, dict):
+            return parsed.get("result"), parsed.get("stdout", "")
+        # Parsed into a primitive (e.g., int/str) -> treat as stdout text
+        return None, str(parsed)
+    except json.JSONDecodeError:
+        pass
+    # try parsing from first { onward
+    brace = out.find("{")
+    if brace != -1:
+        try:
+            parsed = json.loads(out[brace:])
+            leading = out[:brace].strip()
+            user_stdout = parsed.get("stdout", "")
+            if leading:
+                user_stdout = leading + ("\n" + user_stdout if user_stdout else "")
+            return parsed.get("result"), user_stdout
+        except json.JSONDecodeError:
+            pass
+    # give up: treat whole output as stdout
+    return None, out
 
 class TeacherAssignIn(BaseModel):
     teacher_id: int
@@ -311,6 +356,32 @@ def api_me(me: MeOut = Depends(get_current_user)):
     # (간단히 다시 조회)
     row = get_user_by_email(me.email)
     return MeOut(id=row[0], email=row[1], username=row[4], role=row[3], is_verified=row[5])
+
+# ---------- 코드 실행(런) ----------
+@app.post("/sandbox/run", response_model=RunRes)
+def sandbox_run(body: RunReq, me: MeOut = Depends(get_current_user)):
+    timeout = min(max(body.timeout_ms or 0, 100), 5000)
+    if body.payload is not None:
+        code, out, err, elapsed = run_python_answer(body.source_code, body.payload, timeout)
+        result, user_stdout = _parse_payload_output(out or "")
+        return RunRes(
+            mode="payload",
+            result=result,
+            stdout=user_stdout,
+            stderr=err,
+            time_ms=elapsed,
+            return_code=code,
+        )
+
+    code, out, err, elapsed = run_python(body.source_code, body.stdin_text or "", timeout)
+    return RunRes(
+        mode="stdin",
+        result=None,
+        stdout=out,
+        stderr=err,
+        time_ms=elapsed,
+        return_code=code,
+    )
 
 # ---------- 제출 생성 라우트 수정 ----------
 
@@ -885,27 +956,51 @@ def api_get_submission(sid: int, me: MeOut = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail="Forbidden")
         return _row_to_submission(r)
 
+def _parse_stdout_field(raw: str) -> tuple[Any | None, str]:
+    """Return (return_value, stdout_printed) from stored stdout text."""
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict) and ("return" in data or "stdout" in data):
+            return data.get("return"), data.get("stdout", "")
+    except (TypeError, json.JSONDecodeError):
+        pass
+    return None, raw
+
 @app.get("/submissions/{sid}/results")
 def api_get_submission_results(sid: int, me: MeOut = Depends(get_current_user)):
     with DB() as cur:
         # 권한 체크
-        cur.execute("SELECT user_id FROM submissions WHERE id=%s", (sid,))
+        cur.execute("SELECT user_id, problem_id FROM submissions WHERE id=%s", (sid,))
         rr = cur.fetchone()
         if not rr:
             raise HTTPException(status_code=404, detail="Submission not found")
-        owner_id = rr[0]
+        owner_id, problem_id = rr
         if not can_access_student(me, owner_id):
             raise HTTPException(status_code=403, detail="Forbidden")
 
+        cur.execute("SELECT COUNT(*) FROM testcases WHERE problem_id=%s", (problem_id,))
+        total_testcases = cur.fetchone()[0]
+
         cur.execute("""
-            SELECT t.idx, r.verdict, r.time_ms, r.stdout, r.stderr
+            SELECT r.id, t.idx, r.verdict, r.time_ms, r.stdout, r.stderr, t.input_text, t.expected_text
             FROM submission_results r
             JOIN testcases t ON r.testcase_id = t.id
             WHERE r.submission_id = %s
-            ORDER BY t.idx
+            ORDER BY r.id
         """, (sid,))
         rows = cur.fetchall()
-        return [
-            {"idx": x[0], "verdict": x[1], "time_ms": x[2], "stdout": x[3], "stderr": x[4]}
-            for x in rows
-        ]
+        results = []
+        for x in rows:
+            ret_val, stdout_print = _parse_stdout_field(x[4])
+            results.append({
+                "result_id": x[0],
+                "idx": x[1],
+                "verdict": x[2],
+                "time_ms": x[3],
+                "stdout": stdout_print,
+                "stderr": x[5],
+                "input_text": x[6],
+                "expected_text": x[7],
+                "return_value": ret_val,
+            })
+        return {"results": results, "total_testcases": total_testcases}
