@@ -73,6 +73,29 @@ def normalize(val):
         return sorted(normalize(v) for v in val)
     return val
 
+def parse_payload_output(out: str) -> tuple[any, str]:
+    """Extract (result, stdout) from harness output, tolerating leading noise."""
+    if not out:
+        return None, ""
+    try:
+        parsed = json.loads(out)
+        if isinstance(parsed, dict):
+            return parsed.get("result"), parsed.get("stdout", "")
+    except json.JSONDecodeError:
+        pass
+    brace = out.find("{")
+    if brace != -1:
+        try:
+            parsed = json.loads(out[brace:])
+            leading = out[:brace].strip()
+            user_stdout = parsed.get("stdout", "")
+            if leading:
+                user_stdout = leading + ("\n" + user_stdout if user_stdout else "")
+            return parsed.get("result"), user_stdout
+        except json.JSONDecodeError:
+            pass
+    return None, out
+
 def main():
     conn = psycopg2.connect(DSN)
     conn.autocommit = False
@@ -103,30 +126,28 @@ def main():
                     stdout_to_store = ""
                 elif code != 0:
                     verdict = "re"; final_status = "runtime_error"
-                    stdout_to_store = out
+                    _, parsed_stdout = parse_payload_output(out or "")
+                    stdout_to_store = json.dumps({"return": None, "stdout": parsed_stdout}, ensure_ascii=False)
                 else:
-                    try:
-                        payload = json.loads(out)
-                        actual = payload.get("result")
-                        captured_stdout = payload.get("stdout", "")
-                    except json.JSONDecodeError:
-                        payload = None
-                        actual = None
-                        captured_stdout = out
-                    if payload is None:
+                    actual, captured_stdout = parse_payload_output(out or "")
+                    if actual is None and captured_stdout == "":
                         verdict = "runtime_error"; final_status = "runtime_error"
                     else:
                         if normalize(actual) == normalize(structured_expected):
-                            verdict = "ok"
-                            total_ok += 1
+                            verdict = "ok"; total_ok += 1
                         else:
                             verdict = "wa"
                             if final_status == "accepted":
                                 final_status = "wrong_answer"
-                    stdout_to_store = captured_stdout
+                    if verdict == "ok":
+                        stdout_to_store = ""  # skip storing return/stdout for accepted cases
+                    else:
+                        stdout_to_store = json.dumps({"return": actual, "stdout": captured_stdout}, ensure_ascii=False)
                 insert_result(conn, sid, tcid, verdict, elapsed, stdout_to_store, err)
                 conn.commit()
-                continue
+                if verdict != "ok":
+                    break  # stop at first failing/timeout/runtime_error testcase
+                continue  # structured case handled, skip plain stdin runner
 
             code, out, err, elapsed = run_python(src, tc["input_text"], tc["timeout_ms"])
             max_time = max(max_time, elapsed)
@@ -142,8 +163,11 @@ def main():
                 if verdict == "ok":
                     total_ok += 1
 
-            insert_result(conn, sid, tcid, verdict, elapsed, out, err)
+            stdout_to_store = "" if verdict == "ok" else out
+            insert_result(conn, sid, tcid, verdict, elapsed, stdout_to_store, err)
             conn.commit()
+            if verdict != "ok":
+                break  # stop at first failing/timeout/runtime_error testcase
 
         finalize(conn, sid, final_status, total_ok, max_time)
 

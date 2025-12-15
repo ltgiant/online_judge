@@ -26,7 +26,7 @@ api.interceptors.response.use(
       if (typeof window !== "undefined") {
         localStorage.removeItem("access_token");
         // 필요하면 강제로 페이지 이동:
-        window.location.href = "/login";
+        // window.location.href = "";
       }
     }
     return Promise.reject(err);

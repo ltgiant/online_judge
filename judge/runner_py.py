@@ -1,4 +1,6 @@
-import subprocess, tempfile, os, time, json, textwrap
+import subprocess, tempfile, os, time, json, textwrap, sys
+
+PYTHON_BIN = os.environ.get("PYTHON_BINARY") or sys.executable or "python3"
 
 HARNESS_CODE = """
 import json, sys, importlib.util, contextlib, io
@@ -57,7 +59,7 @@ def run_python(source_code: str, stdin_data: str, timeout_ms: int):
         start = time.time()
         try:
             proc = subprocess.run(
-                ["python", main_path],
+                [PYTHON_BIN, main_path],
                 input=stdin_data,
                 capture_output=True,
                 text=True,
@@ -65,6 +67,9 @@ def run_python(source_code: str, stdin_data: str, timeout_ms: int):
             )
             elapsed = int((time.time() - start) * 1000)
             return proc.returncode, proc.stdout, proc.stderr, elapsed
+        except FileNotFoundError:
+            elapsed = int((time.time() - start) * 1000)
+            return 127, "", f"PYTHON_BIN not found: {PYTHON_BIN}", elapsed
         except subprocess.TimeoutExpired:
             elapsed = int((time.time() - start) * 1000)
             return 124, "", "TIMEOUT", elapsed
@@ -82,7 +87,7 @@ def run_python_answer(source_code: str, payload: dict | list, timeout_ms: int):
         start = time.time()
         try:
             proc = subprocess.run(
-                ["python", harness_path],
+                [PYTHON_BIN, harness_path],
                 input=json.dumps(payload, ensure_ascii=False),
                 capture_output=True,
                 text=True,
@@ -91,6 +96,9 @@ def run_python_answer(source_code: str, payload: dict | list, timeout_ms: int):
             )
             elapsed = int((time.time() - start) * 1000)
             return proc.returncode, proc.stdout, proc.stderr, elapsed
+        except FileNotFoundError:
+            elapsed = int((time.time() - start) * 1000)
+            return 127, "", f"PYTHON_BIN not found: {PYTHON_BIN}", elapsed
         except subprocess.TimeoutExpired:
             elapsed = int((time.time() - start) * 1000)
             return 124, "", "TIMEOUT", elapsed

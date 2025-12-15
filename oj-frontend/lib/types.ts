@@ -33,13 +33,22 @@ export type ProblemCreatePayload = {
   };
   
 export type SubmissionResult = {
-    testcase_id: number;
-    verdict: "ok" | "wa" | "tle" | "re" | "skipped";
-    time_ms: number;
-    stdout: string;
-    stderr: string;
-    idx: number;
-  };
+  result_id?: number;
+  testcase_id?: number;
+  verdict: "ok" | "wa" | "tle" | "re" | "skipped";
+  time_ms: number;
+  stdout: string;
+  stderr: string;
+  idx: number;
+  input_text?: string;
+  expected_text?: string;
+  return_value?: any;
+};
+
+export type SubmissionResultsResponse = {
+  results: SubmissionResult[];
+  total_testcases: number;
+};
 
 export type TeacherClass = {
   id: number;
