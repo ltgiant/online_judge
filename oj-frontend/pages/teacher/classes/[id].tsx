@@ -42,6 +42,12 @@ export default function TeacherClassDetailPage() {
   const [manageError, setManageError] = useState<string | null>(null);
   const [manageVisible, setManageVisible] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newProblemWeek, setNewProblemWeek] = useState<string>("");
+  const [manageWeek, setManageWeek] = useState<string>("");
+  const [newProblemCsv, setNewProblemCsv] = useState<File | null>(null);
+
+  const [weekOptions, setWeekOptions] = useState<number[]>([]);
+  const [openWeeks, setOpenWeeks] = useState<Record<string, boolean>>({});
 
   const isTeacher = me && (me.role === "teacher" || me.role === "admin");
 
@@ -52,7 +58,7 @@ export default function TeacherClassDetailPage() {
   }, [loading, isTeacher, classId]);
 
   const fetchAll = async () => {
-    await Promise.all([fetchClassDetail(), fetchClassProblems(), fetchClassSubmissions()]);
+    await Promise.all([fetchClassDetail(), fetchClassWeeks(), fetchClassProblems(), fetchClassSubmissions()]);
   };
 
   const fetchClassDetail = async () => {
@@ -66,11 +72,30 @@ export default function TeacherClassDetailPage() {
     }
   };
 
+  const fetchClassWeeks = async () => {
+    if (!Number.isInteger(classId)) return;
+    try {
+      const { data } = await api.get<Array<{ week_no: number }>>(`/teacher/classes/${classId}/weeks`);
+      const weeks = data.map((w) => w.week_no).sort((a, b) => a - b);
+      setWeekOptions(weeks);
+      if (!newProblemWeek && weeks.length > 0) {
+        setNewProblemWeek(String(weeks[0]));
+      }
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? "Failed to load weeks");
+    }
+  };
+
   const fetchClassProblems = async () => {
     if (!Number.isInteger(classId)) return;
     try {
       const { data } = await api.get<ClassProblem[]>(`/teacher/classes/${classId}/problems`);
       setClassProblems(data);
+      setWeekOptions((prev) => {
+        const merged = new Set(prev);
+        data.forEach((p) => p.week && merged.add(p.week));
+        return Array.from(merged).sort((a, b) => a - b);
+      });
       if (!csvProblemId && data.length > 0) {
         setCsvProblemId(String(data[0].id));
       }
@@ -130,12 +155,18 @@ export default function TeacherClassDetailPage() {
   const handleCreateProblemForClass = async () => {
     if (!Number.isInteger(classId)) return;
     const { slug, title, difficulty, statement_md, starter_code } = newProblem;
-    if (!slug.trim() || !title.trim() || !statement_md.trim()) {
-      setError("Slug, title, and statement are required");
+    if (!slug.trim() || !title.trim() || !statement_md.trim() || !newProblemWeek.trim()) {
+      setError("Slug, title, statement, and week are required");
+      return;
+    }
+    const weekValue = Number(newProblemWeek);
+    if (!weekOptions.includes(weekValue)) {
+      setError("Select a week from the existing week list.");
       return;
     }
     try {
-      await api.post(`/teacher/classes/${classId}/problems`, {
+      const { data } = await api.post(`/teacher/classes/${classId}/problems`, {
+        week: weekValue,
         new_problem: {
           slug: slug.trim(),
           title: title.trim(),
@@ -144,6 +175,17 @@ export default function TeacherClassDetailPage() {
           starter_code: starter_code?.trim() || undefined,
         },
       });
+      const createdProblemId = data?.problem_id;
+      if (createdProblemId && newProblemCsv) {
+        const formData = new FormData();
+        formData.append("file", newProblemCsv);
+        formData.append("replace", "true");
+        await api.post(
+          `/teacher/classes/${classId}/problems/${createdProblemId}/testcases/upload`,
+          formData,
+          { headers: { "Content-Type": "multipart/form-data" } },
+        );
+      }
       setStatus("Problem created & assigned to class");
       setNewProblem({
         slug: "",
@@ -152,6 +194,8 @@ export default function TeacherClassDetailPage() {
         statement_md: "# Problem statement\n\nDescribe the problem here.",
         starter_code: DEFAULT_STARTER,
       });
+      setNewProblemWeek("");
+      setNewProblemCsv(null);
       setShowCreateForm(false);
       setError(null);
       await fetchClassProblems();
@@ -184,12 +228,22 @@ export default function TeacherClassDetailPage() {
       setError("Load a problem to manage first.");
       return;
     }
+    if (!manageWeek.trim()) {
+      setError("Select a week for this class problem.");
+      return;
+    }
+    const weekValue = Number(manageWeek);
+    if (!weekOptions.includes(weekValue)) {
+      setError("Select a week from the existing week list.");
+      return;
+    }
     try {
       await api.put(`/teacher/classes/${classId}/problems/${csvProblemId}`, {
         title: manageProblem.title,
         difficulty: manageProblem.difficulty,
         statement_md: manageProblem.statement_md,
         starter_code: manageProblem.starter_code,
+        week: weekValue,
       });
       setStatus("Problem updated");
       setError(null);
@@ -266,6 +320,61 @@ export default function TeacherClassDetailPage() {
       </div>
     );
   }
+
+  const problemsByWeek = classProblems.reduce<Record<string, ClassProblem[]>>((acc, prob) => {
+    const label = prob.week ? `Week ${prob.week}` : "Unscheduled";
+    acc[label] = acc[label] || [];
+    acc[label].push(prob);
+    return acc;
+  }, {});
+  weekOptions.forEach((w) => {
+    const label = `Week ${w}`;
+    if (!problemsByWeek[label]) {
+      problemsByWeek[label] = [];
+    }
+  });
+  const orderedWeekKeys = Object.keys(problemsByWeek).sort((a, b) => {
+    const aw = Number(a.replace("Week ", "")) || 0;
+    const bw = Number(b.replace("Week ", "")) || 0;
+    return aw - bw || a.localeCompare(b);
+  });
+
+  const toggleWeekOpen = (label: string) => {
+    setOpenWeeks((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
+
+  const handleAddNewWeekBanner = () => {
+    if (!Number.isInteger(classId)) return;
+    const currentMax = weekOptions.length ? Math.max(...weekOptions) : 0;
+    const next = currentMax + 1;
+    api
+      .post(`/teacher/classes/${classId}/weeks`, { week_no: next })
+      .then(() => {
+        setWeekOptions((prev) => [...prev, next]);
+        if (!newProblemWeek) setNewProblemWeek(String(next));
+        if (!manageWeek) setManageWeek(String(next));
+        setStatus(`Week ${next} created`);
+      })
+      .catch((e: any) => setError(e?.response?.data?.detail ?? "Failed to create week"));
+  };
+
+  const handleRemoveWeekBanner = (week: number) => {
+    const hasProblems = (problemsByWeek[`Week ${week}`] || []).length > 0;
+    if (hasProblems) {
+      setError("Remove problems from this week before deleting the week.");
+      return;
+    }
+    if (!Number.isInteger(classId)) return;
+    api
+      .delete(`/teacher/classes/${classId}/weeks/${week}`)
+      .then(() => {
+        setWeekOptions((prev) => prev.filter((w) => w !== week));
+        if (newProblemWeek === String(week)) setNewProblemWeek("");
+        if (manageWeek === String(week)) setManageWeek("");
+        setStatus(`Week ${week} removed`);
+      })
+      .catch((e: any) => setError(e?.response?.data?.detail ?? "Failed to remove week"));
+  };
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-4">
@@ -365,56 +474,102 @@ export default function TeacherClassDetailPage() {
 
       <section className="rounded border bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">Class Problems</h2>
-        <ul className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
-          {classProblems.map((p) => (
-            <li key={p.id} className="rounded border border-gray-200 p-2 bg-gray-50">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-semibold">
-                    {p.title} <span className="text-xs text-gray-500">(# {p.id})</span>
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Slug: {p.slug} · Difficulty: {p.difficulty}
-                  </div>
-                  {p.assigned_by_name && (
-                    <div className="text-xs text-gray-500">
-                      Assigned by {p.assigned_by_name}
-                    </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <button
+            className="rounded border px-3 py-1 font-semibold text-indigo-700 hover:bg-gray-50"
+            onClick={handleAddNewWeekBanner}
+          >
+            Add new week
+          </button>
+          <span className="text-gray-500">Adds the next week number to the dropdowns.</span>
+        </div>
+        <div className="mt-3 space-y-4 text-sm">
+          {orderedWeekKeys.map((label) => (
+            <div key={label} className="rounded border border-gray-200">
+              <div className="flex items-center justify-between bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700">
+                <div className="flex items-center gap-2">
+                  <button
+                    className="rounded border px-2 py-0.5 text-[11px] font-normal text-gray-700 hover:bg-white"
+                    onClick={() => toggleWeekOpen(label)}
+                  >
+                    {openWeeks[label] ? "Hide" : "Open"}
+                  </button>
+                  <span>
+                    {label}
+                    <span className="ml-2 text-[11px] font-normal text-gray-500">
+                      {problemsByWeek[label].length} problem{problemsByWeek[label].length === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {label.startsWith("Week ") && (problemsByWeek[label]?.length ?? 0) === 0 && (
+                    <button
+                      className="rounded border px-2 py-0.5 text-[11px] font-normal text-red-600 hover:bg-red-50"
+                      onClick={() => handleRemoveWeekBanner(Number(label.replace("Week ", "")))}
+                    >
+                      Remove week
+                    </button>
                   )}
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <button
-                    className="rounded border px-2 py-1 text-xs hover:bg-white"
-                    onClick={() => {
-                      setStatus(null);
-                      setError(null);
-                      if (manageVisible && csvProblemId === String(p.id)) {
-                        setManageVisible(false);
-                        setManageProblem(null);
-                        setManageError(null);
-                        return;
-                      }
-                      setCsvProblemId(String(p.id));
-                      setManageVisible(true);
-                      void fetchManageProblem(p.id);
-                    }}
-                  >
-                    Manage
-                  </button>
-                  <button
-                    className="rounded border border-red-500 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                    onClick={() => handleRemoveProblem(p.id, p.title)}
-                  >
-                    Remove
-                  </button>
-                </div>
               </div>
-            </li>
+              {openWeeks[label] && (
+                <ul className="divide-y">
+                  {problemsByWeek[label].length === 0 && (
+                    <li className="px-3 py-2 text-xs text-gray-500">No problems in this week yet.</li>
+                  )}
+                  {problemsByWeek[label].map((p) => (
+                    <li key={p.id} className="flex items-start justify-between gap-2 px-3 py-2">
+                      <div>
+                        <div className="font-semibold">
+                          {p.title} <span className="text-xs text-gray-500">(# {p.id})</span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Slug: {p.slug} · Difficulty: {p.difficulty}
+                        </div>
+                        {p.assigned_by_name && (
+                          <div className="text-xs text-gray-500">
+                            Assigned by {p.assigned_by_name}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <button
+                          className="rounded border px-2 py-1 text-xs hover:bg-white"
+                          onClick={() => {
+                            setStatus(null);
+                            setError(null);
+                            if (manageVisible && csvProblemId === String(p.id)) {
+                              setManageVisible(false);
+                              setManageProblem(null);
+                              setManageError(null);
+                              setManageWeek("");
+                              return;
+                            }
+                            setCsvProblemId(String(p.id));
+                            setManageVisible(true);
+                            setManageWeek(p.week ? String(p.week) : "");
+                            void fetchManageProblem(p.id);
+                          }}
+                        >
+                          Manage
+                        </button>
+                        <button
+                          className="rounded border border-red-500 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                          onClick={() => handleRemoveProblem(p.id, p.title)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           ))}
           {classProblems.length === 0 && (
-            <li className="text-sm text-gray-500">No problems assigned yet.</li>
+            <div className="text-sm text-gray-500">No problems assigned yet.</div>
           )}
-        </ul>
+        </div>
         <div className="mt-4 space-y-2">
           <button
             className="w-full rounded border px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-gray-50"
@@ -440,6 +595,62 @@ export default function TeacherClassDetailPage() {
                 value={newProblem.title}
                 onChange={(e) => setNewProblem((prev) => ({ ...prev, title: e.target.value }))}
               />
+              <select
+                className="w-full rounded border p-2 text-gray-700"
+                value={newProblemWeek}
+                onChange={(e) => setNewProblemWeek(e.target.value)}
+                disabled={weekOptions.length === 0}
+              >
+                <option value="">Select Week</option>
+                {weekOptions.map((w) => (
+                  <option key={w} value={w}>
+                    Week {w}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="w-full rounded border p-2 text-gray-700"
+                value={newProblem.difficulty}
+                onChange={(e) =>
+                  setNewProblem((prev) => ({ ...prev, difficulty: e.target.value as typeof newProblem.difficulty }))
+                }
+              >
+                <option value="easy">Easy</option>
+                <option value="medium">Medium</option>
+                <option value="hard">Hard</option>
+              </select>
+              <textarea
+                className="w-full rounded border p-2 text-xs"
+                rows={5}
+                placeholder="# Problem statement"
+                value={newProblem.statement_md}
+                onChange={(e) => setNewProblem((prev) => ({ ...prev, statement_md: e.target.value }))}
+              />
+              <label className="text-xs font-semibold text-gray-700">Starter code</label>
+              <textarea
+                className="w-full rounded border p-2 font-mono"
+                rows={4}
+                placeholder={`def answer(...):\n    # TODO: implement\n    return None`}
+                value={newProblem.starter_code ?? ""}
+                onChange={(e) =>
+                  setNewProblem((prev) => ({
+                    ...prev,
+                    starter_code: e.target.value,
+                  }))
+                }
+              />
+              <div className="space-y-1">
+                <div className="text-[11px] font-semibold text-gray-700">Upload testcases (CSV)</div>
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="w-full rounded border p-2 text-sm"
+                  onChange={(e) => setNewProblemCsv(e.target.files?.[0] ?? null)}
+                />
+                <p className="text-[11px] text-gray-500">
+                  CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.
+                </p>
+              </div>
               <button
                 onClick={handleCreateProblemForClass}
                 className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
@@ -472,6 +683,18 @@ export default function TeacherClassDetailPage() {
                     <option value="easy">Easy</option>
                     <option value="medium">Medium</option>
                     <option value="hard">Hard</option>
+                  </select>
+                  <select
+                    className="w-full rounded border p-2"
+                    value={manageWeek}
+                    onChange={(e) => setManageWeek(e.target.value)}
+                  >
+                    <option value="">Select Week</option>
+                    {weekOptions.map((w) => (
+                      <option key={w} value={w}>
+                        Week {w}
+                      </option>
+                    ))}
                   </select>
                   <textarea
                     className="w-full rounded border p-2"
