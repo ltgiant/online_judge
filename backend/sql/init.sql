@@ -55,12 +55,22 @@ CREATE TABLE IF NOT EXISTS class_students (
   PRIMARY KEY (class_id, student_id)
 );
 
-CREATE TABLE IF NOT EXISTS class_problems (
+CREATE TABLE IF NOT EXISTS class_weeks (
+  id          BIGSERIAL PRIMARY KEY,
   class_id    BIGINT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
-  problem_id  BIGINT NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
-  assigned_by BIGINT REFERENCES users(id) ON DELETE CASCADE,
-  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (class_id, problem_id)
+  week_no     INT NOT NULL,
+  title       TEXT,
+  description TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(class_id, week_no)
+);
+
+CREATE TABLE IF NOT EXISTS class_week_problems (
+  class_week_id BIGINT NOT NULL REFERENCES class_weeks(id) ON DELETE CASCADE,
+  problem_id    BIGINT NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+  assigned_by   BIGINT REFERENCES users(id) ON DELETE CASCADE,
+  assigned_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (class_week_id, problem_id)
 );
 
 CREATE TABLE IF NOT EXISTS testcases (

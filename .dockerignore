@@ -1,0 +1,25 @@
+# VCS
+.git
+.gitignore
+
+# Node/Next
+node_modules
+.next
+npm-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__
+*.py[cod]
+.venv
+.env
+
+# OS/editor
+.DS_Store
+*.swp
+*.swo
+
+# Local artifacts
+*.log
+coverage
+.config

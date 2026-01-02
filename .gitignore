@@ -4,9 +4,14 @@ __pycache__/
 *.pyo
 *.pyd
 .venv/
-env/
 .venv_linux/
 *.db
+.npm/
+.ssh/
+.gitconfig
+.wget-hsts
+.lesshst
+.bash_history
 
 # Node / Next.js
 node_modules/
@@ -23,4 +28,6 @@ dist/
 # Secrets
 .env
 .env.local
-.env.*
+env/.env.dev
+env/.env.prod
+!env/env.example

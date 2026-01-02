@@ -5,7 +5,15 @@ from dotenv import load_dotenv
 from runner_py import run_python, run_python_answer
 
 load_dotenv()
-DSN = f"dbname={os.getenv('POSTGRES_DB')} user={os.getenv('POSTGRES_USER')} password={os.getenv('POSTGRES_PASSWORD')} host={os.getenv('POSTGRES_HOST')} port={os.getenv('POSTGRES_PORT')}"
+PG_SSLMODE = os.getenv("PG_SSLMODE", "require")
+DSN = (
+    f"dbname={os.getenv('POSTGRES_DB')} "
+    f"user={os.getenv('POSTGRES_USER')} "
+    f"password={os.getenv('POSTGRES_PASSWORD')} "
+    f"host={os.getenv('POSTGRES_HOST')} "
+    f"port={os.getenv('POSTGRES_PORT')} "
+    f"sslmode={PG_SSLMODE}"
+)
 
 def pick_one(conn):
     with conn.cursor(cursor_factory=DictCursor) as cur:

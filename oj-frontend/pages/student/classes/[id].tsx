@@ -14,7 +14,7 @@ type StudentClassDetail = {
   description?: string | null;
   created_at: string | null;
   teachers: TeacherInfo[];
-  problems: Array<Pick<ClassProblem, "id" | "slug" | "title" | "difficulty">>;
+  problems: Array<Pick<ClassProblem, "id" | "slug" | "title" | "difficulty" | "week">>;
 };
 
 export default function StudentClassDetailPage() {
@@ -63,6 +63,18 @@ export default function StudentClassDetailPage() {
     );
   }
 
+  const problemsByWeek = (detail?.problems || []).reduce<Record<string, typeof detail.problems>>((acc, prob) => {
+    const weekLabel = prob.week ? `Week ${prob.week}` : "Unscheduled";
+    acc[weekLabel] = acc[weekLabel] || [];
+    acc[weekLabel].push(prob);
+    return acc;
+  }, {});
+  const orderedWeekKeys = Object.keys(problemsByWeek).sort((a, b) => {
+    const aw = Number(a.replace("Week ", "")) || 0;
+    const bw = Number(b.replace("Week ", "")) || 0;
+    return aw - bw || a.localeCompare(b);
+  });
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
       <button
@@ -98,22 +110,28 @@ export default function StudentClassDetailPage() {
         {detail.problems.length === 0 && (
           <p className="text-sm text-gray-500">No problems assigned yet.</p>
         )}
-        <ul className="mt-2 divide-y text-sm">
-          {detail.problems.map((p) => (
-            <li key={p.id} className="flex items-center justify-between py-3">
-              <div>
-                <div className="font-semibold text-gray-900">{p.title}</div>
-                <div className="text-xs text-gray-500">Difficulty: {p.difficulty}</div>
+        <div className="mt-2 space-y-4 text-sm">
+          {orderedWeekKeys.map((label) => (
+            <div key={label} className="rounded border border-gray-200">
+              <div className="flex items-center justify-between bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700">
+                <span>
+                  {label}
+                  <span className="ml-2 text-[11px] font-normal text-gray-500">
+                    {problemsByWeek[label].length} problem{problemsByWeek[label].length === 1 ? "" : "s"}
+                  </span>
+                </span>
+                <Link
+                  href={`/student/classes/${classId}/weeks/${
+                    label === "Unscheduled" ? "unscheduled" : label.replace("Week ", "")
+                  }?autoOpen=1`}
+                  className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                >
+                  Open
+                </Link>
               </div>
-              <Link
-                href={`/problems/${p.id}`}
-                className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                Open
-              </Link>
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       </section>
 
       {error && <div className="mt-4 text-sm text-red-600">{error}</div>}

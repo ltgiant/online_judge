@@ -12,7 +12,13 @@ export type ProblemDetail = {
     difficulty: "easy" | "medium" | "hard";
     statement_md: string;
     starter_code?: string | null;
-    public_samples: { idx: number; input_text: string; expected_text: string }[];
+    public_samples: {
+      idx: number;
+      input_text: string;
+      expected_text: string;
+      raw_input_text?: string;
+      raw_expected_text?: string;
+    }[];
   };
 
 export type ProblemCreatePayload = {
@@ -80,6 +86,7 @@ export type ClassProblem = {
   assigned_at: string | null;
   assigned_by?: number | null;
   assigned_by_name?: string | null;
+   week: number | null;
 };
 
 export type ClassSubmission = {

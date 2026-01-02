@@ -47,7 +47,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://35.216.0.27:3000",  # GCE 외부 IP:3000 추가
+        "http://35.216.0.27:3000",        # GCE 외부 IP:3000 추가
+        "http://35.216.0.27:3100",
+        "https://cotea.io",
+        "https://www.cotea.io",
     ],
     allow_credentials=False,
     allow_methods=["*"],   # OPTIONS 포함
@@ -142,6 +145,7 @@ class ClassTeacherAddIn(BaseModel):
 class ClassProblemAssignIn(BaseModel):
     problem_id: int | None = None
     new_problem: ProblemCreate | None = None
+    week: int = Field(ge=1, le=52)
 
     @model_validator(mode="after")
     def validate_choice(cls, values):
@@ -150,6 +154,14 @@ class ClassProblemAssignIn(BaseModel):
         if (pid is None and newp is None) or (pid is not None and newp is not None):
             raise ValueError("Provide either problem_id or new_problem")
         return values
+
+class ClassWeekCreateIn(BaseModel):
+    week_no: int = Field(ge=1, le=52)
+    title: str | None = None
+    description: str | None = None
+
+class ClassJoinIn(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
 
 def _str_to_bool(val: str | None, default: bool = False) -> bool:
     if val is None or val == "":
@@ -207,7 +219,8 @@ def _format_sample_value(raw: str) -> tuple[str, bool]:
             return obj
         if isinstance(obj, list):
             if all(isinstance(x, (int, float, str, bool)) or x is None for x in obj):
-                return " ".join(fmt(x) for x in obj)
+                # Show simple lists line-by-line for readability
+                return "\n".join(fmt(x) for x in obj)
             return "\n".join(fmt(x) for x in obj)
         if isinstance(obj, dict):
             if set(obj.keys()).issubset({"args", "kwargs"}):
@@ -409,7 +422,7 @@ def list_problems():
             SELECT id, slug, title, difficulty
             FROM problems p
             WHERE NOT EXISTS (
-                SELECT 1 FROM class_problems cp WHERE cp.problem_id = p.id
+                SELECT 1 FROM class_week_problems cwp WHERE cwp.problem_id = p.id
             )
             ORDER BY id
         """)
@@ -428,6 +441,7 @@ class ProblemUpdateIn(BaseModel):
     difficulty: str | None = Field(default=None, pattern="^(easy|medium|hard)$")
     statement_md: str | None = None
     starter_code: str | None = None
+    week: int | None = Field(default=None, ge=1, le=52)
 
     @model_validator(mode="after")
     def at_least_one(cls, values):
@@ -474,16 +488,18 @@ def get_problem(pid: int, me: MeOut | None = Depends(get_optional_user)):
         samples: list[dict] = []
         expects_json = False
         for t in samples_db:
-            input_text = t[1]
-            expected_text = t[2]
-            rendered_input, was_json_in = _format_sample_value(input_text)
-            rendered_expected, was_json_out = _format_sample_value(expected_text)
+            raw_input = t[1]
+            raw_expected = t[2]
+            rendered_input, was_json_in = _format_sample_value(raw_input)
+            rendered_expected, was_json_out = _format_sample_value(raw_expected)
             if was_json_in or was_json_out:
                 expects_json = True
             samples.append({
                 "idx": t[0],
                 "input_text": rendered_input,
                 "expected_text": rendered_expected,
+                "raw_input_text": raw_input,
+                "raw_expected_text": raw_expected,
             })
 
         return ProblemDetail(
@@ -607,6 +623,51 @@ def teacher_get_class(class_id: int, me: MeOut = Depends(get_current_user)):
         "students": students,
     }
 
+@app.get("/teacher/classes/{class_id}/weeks")
+def teacher_list_weeks(class_id: int, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    weeks = logic.list_class_weeks(class_id)
+    return [
+        {
+            "id": w["id"],
+            "week_no": w["week_no"],
+            "title": w["title"],
+            "description": w["description"],
+            "created_at": _to_iso(w["created_at"]),
+        }
+        for w in weeks
+    ]
+
+@app.post("/teacher/classes/{class_id}/weeks")
+def teacher_create_week(class_id: int, payload: ClassWeekCreateIn, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    week_id = logic.ensure_class_week(class_id, payload.week_no)
+    logic.set_class_week_meta(class_id, payload.week_no, payload.title, payload.description)
+    return {"detail": "week_created", "week_id": week_id, "week_no": payload.week_no}
+
+@app.delete("/teacher/classes/{class_id}/weeks/{week_no}")
+def teacher_delete_week(class_id: int, week_no: int, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    ok, msg = logic.delete_class_week(class_id, week_no)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg or "Failed to delete week")
+    return {"detail": "week_deleted", "week_no": week_no}
+
 @app.post("/teacher/classes/{class_id}/students")
 def teacher_add_student_to_class(class_id: int, payload: ClassStudentAddIn, me: MeOut = Depends(get_current_user)):
     ensure_role(me, {"teacher", "admin"})
@@ -668,6 +729,7 @@ def teacher_list_class_problems(class_id: int, me: MeOut = Depends(get_current_u
             "assigned_at": _to_iso(p["assigned_at"]),
             "assigned_by": p["assigned_by"],
             "assigned_by_name": p["assigned_by_name"],
+            "week": p["week"],
         }
         for p in problems
     ]
@@ -689,7 +751,7 @@ def teacher_add_problem_to_class(class_id: int, payload: ClassProblemAssignIn, m
         if not prob:
             raise HTTPException(status_code=404, detail="Problem not found")
 
-    logic.add_problem_to_class(class_id, problem_id, me.id)
+    logic.add_problem_to_class(class_id, problem_id, me.id, payload.week)
     return {"detail": "problem_assigned", "problem_id": problem_id}
 
 @app.delete("/teacher/classes/{class_id}/problems/{problem_id}")
@@ -731,10 +793,13 @@ def teacher_update_problem(
     if payload.starter_code is not None:
         updates["starter_code"] = payload.starter_code
 
-    if not updates:
+    if not updates and payload.week is None:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    logic.update_problem(problem_id, **updates)
+    if updates:
+        logic.update_problem(problem_id, **updates)
+    if payload.week is not None:
+        logic.update_class_problem_week(class_id, problem_id, payload.week)
     return {"detail": "problem_updated"}
 
 @app.get("/student/classes")
@@ -751,6 +816,39 @@ def student_list_classes(me: MeOut = Depends(get_current_user)):
         }
         for c in classes
     ]
+
+@app.post("/student/classes/join")
+def student_join_class(payload: ClassJoinIn, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"student"})
+    code = payload.code.strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Code required")
+    cls = logic.get_class_by_code(code)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not exist")
+    already = logic.student_in_class(me.id, cls["id"])
+    if already:
+        return {
+            "detail": "Already registered",
+            "class": {
+                "id": cls["id"],
+                "name": cls["name"],
+                "code": cls["code"],
+                "description": cls["description"],
+                "created_at": _to_iso(cls["created_at"]),
+            },
+        }
+    logic.add_student_to_class(cls["id"], me.id)
+    return {
+        "detail": "Joined class",
+        "class": {
+            "id": cls["id"],
+            "name": cls["name"],
+            "code": cls["code"],
+            "description": cls["description"],
+            "created_at": _to_iso(cls["created_at"]),
+        },
+    }
 
 @app.get("/student/classes/{class_id}")
 def student_get_class(class_id: int, me: MeOut = Depends(get_current_user)):
@@ -775,6 +873,7 @@ def student_get_class(class_id: int, me: MeOut = Depends(get_current_user)):
                 "slug": p["slug"],
                 "title": p["title"],
                 "difficulty": p["difficulty"],
+                "week": p["week"],
             }
             for p in problems
         ],

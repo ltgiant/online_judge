@@ -3,11 +3,19 @@ import { useRouter } from "next/router";
 import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
 import api from "@/lib/api";
 import { useMe } from "@/lib/useMe";
-import { ProblemDetail, SubmissionSummary, SubmissionResult, SubmissionResultsResponse } from "@/lib/types";
+import {
+  ClassProblem,
+  ProblemDetail,
+  SubmissionSummary,
+  SubmissionResult,
+  SubmissionResultsResponse,
+} from "@/lib/types";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -39,6 +47,14 @@ const DEFAULT_CODE = `def answer(n: int, nums: list[int], target: int) -> tuple[
     return (0, 0)
 `;
 
+type StudentClassProblem = Pick<ClassProblem, "id" | "slug" | "title" | "difficulty" | "week" | "assigned_at">;
+type StudentClassDetail = {
+  id: number;
+  name: string;
+  code: string;
+  problems: StudentClassProblem[];
+};
+
 export default function ProblemPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -69,35 +85,74 @@ export default function ProblemPage() {
   } | null>(null);
   const [runningCode, setRunningCode] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
-  const codeStorageKey = Number.isFinite(pid) ? `oj_code_${pid}` : null;
-  const runInputStorageKey = Number.isFinite(pid) ? `oj_run_input_${pid}` : null;
+  const [weekProblems, setWeekProblems] = useState<StudentClassProblem[]>([]);
+  const [navLoading, setNavLoading] = useState(false);
+  const [navError, setNavError] = useState<string | null>(null);
+  const [currentIndex, setCurrentIndex] = useState<number | null>(null);
+  const [targetIndexInput, setTargetIndexInput] = useState<string>("");
+  const [showIndexList, setShowIndexList] = useState(false);
+  // 로그인/검증 상태
+  const { me, loading: loadingMe } = useMe();
+  const canSubmit = !!me && me.is_verified;
+  //const userIdPart = me?.id ? `user_${me.id}` : "guest";
+  //const runInputStorageKey = Number.isFinite(pid) ? `oj_run_input_${pid}_${userIdPart}` : null;
+  const classIdParam = router.query.classId;
+  const weekParam = router.query.week;
+  const classId = Number(Array.isArray(classIdParam) ? classIdParam[0] : classIdParam);
+  const weekValueRaw = Array.isArray(weekParam) ? weekParam[0] : weekParam;
+  const weekValue = weekValueRaw === "unscheduled" ? null : Number(weekValueRaw);
+  const hasWeekContext =
+    (weekValueRaw === "unscheduled" || Number.isInteger(weekValue)) && Number.isInteger(classId);
 
-  const tryConvertSimpleInput = useCallback((text: string) => {
+  const tryConvertArgsKwargsInput = useCallback((text: string) => {
     const lines = text
       .trim()
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l !== "");
-    // 형태: 첫 줄 n, 둘째 줄 배열, 셋째 줄 target
-    if (lines.length === 3) {
-      const n = Number(lines[0]);
-      const arr = lines[1]
-        .split(/\s+/)
-        .map((x) => Number(x))
-        .filter((x) => Number.isFinite(x));
-      const target = Number(lines[2]);
-      if (Number.isFinite(n) && Number.isFinite(target) && arr.length > 0) {
-        return { args: [n, arr, target], kwargs: {} };
+    if (lines.length === 0) return null;
+
+    const parseValue = (raw: string) => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        const tokens = raw.split(/\s+/).filter(Boolean);
+        if (tokens.length > 1) {
+          const nums = tokens.map((t) => Number(t));
+          if (nums.every((n) => Number.isFinite(n))) return nums;
+          return tokens;
+        }
+        const num = Number(raw);
+        if (Number.isFinite(num)) return num;
+        return raw;
       }
-    }
-    return null;
+    };
+
+    const args: any[] = [];
+    const kwargs: Record<string, any> = {};
+    let hasKwargs = false;
+    lines.forEach((line) => {
+      const eqIdx = line.indexOf("=");
+      if (eqIdx > 0) {
+        const key = line.slice(0, eqIdx).trim();
+        const valueRaw = line.slice(eqIdx + 1).trim();
+        if (key) {
+          kwargs[key] = parseValue(valueRaw);
+          hasKwargs = true;
+        }
+      } else {
+        args.push(parseValue(line));
+      }
+    });
+
+    if (args.length === 0 && !hasKwargs) return null;
+    return { args, kwargs };
   }, []);
 
   const formatResult = (val: any) => {
     if (val === null || val === undefined) return "null";
     if (Array.isArray(val)) {
-      // 평범한 원소라면 공백 구분으로 보여주기
-      const flat = val.every((v) => ["string", "number", "boolean"].includes(typeof v));
+      const flat = val.every((v) => ["string", "number", "boolean"].includes(typeof v) || v === null);
       return flat ? val.join(" ") : JSON.stringify(val);
     }
     if (typeof val === "object") return JSON.stringify(val);
@@ -125,11 +180,22 @@ export default function ProblemPage() {
     if (!text) return "";
     try {
       const data = JSON.parse(text);
+      if (Array.isArray(data)) {
+        const flat = data.every((v) => ["string", "number", "boolean"].includes(typeof v) || v === null);
+        return flat ? data.map((v) => formatResult(v)).join("\n") : JSON.stringify(data, null, 2);
+      }
       if (data && typeof data === "object" && ("args" in data || "kwargs" in data)) {
         const lines: string[] = [];
         const args: any[] = Array.isArray((data as any).args) ? (data as any).args : [];
         const kwargs = (data as any).kwargs && typeof (data as any).kwargs === "object" ? (data as any).kwargs : {};
-        args.forEach((v) => lines.push(formatResult(v)));
+        args.forEach((v) => {
+          if (Array.isArray(v)) {
+            const flat = v.every((x) => ["string", "number", "boolean"].includes(typeof x) || x === null);
+            lines.push(flat ? v.join(" ") : JSON.stringify(v));
+          } else {
+            lines.push(formatResult(v));
+          }
+        });
         Object.entries(kwargs).forEach(([k, v]) => lines.push(`${k}=${formatResult(v)}`));
         return lines.join("\n");
       }
@@ -143,9 +209,7 @@ export default function ProblemPage() {
   const passedCount = results ? results.filter((r) => r.verdict === "ok").length : 0;
   const totalCount = totalTestcases ?? (results ? results.length : 0);
 
-  // 로그인/검증 상태
-  const { me, loading: loadingMe } = useMe();
-  const canSubmit = !!me && me.is_verified;
+  
 
   // 문제 상세 로드
   useEffect(() => {
@@ -179,64 +243,134 @@ export default function ProblemPage() {
   // 문제 starter_code 로드 후 에디터 초기화 (사용자가 수정했다면 덮어쓰지 않도록 1회만)
   useEffect(() => {
     if (!Number.isFinite(pid)) return;
+    setProblem(null); // ensure stale problem data is cleared before loading the next one
     setCode(DEFAULT_CODE);
     setCodeInitialized(false);
   }, [pid]);
 
-  // 로컬 저장 코드 불러오기
   useEffect(() => {
-    if (!Number.isFinite(pid) || codeInitialized) return;
-    if (!codeStorageKey) return;
-    try {
-      const saved = window.localStorage.getItem(codeStorageKey);
-      if (saved !== null) {
-        setCode(saved);
-        setCodeInitialized(true);
-      }
-    } catch {
-      // ignore localStorage errors (e.g., private mode)
-    }
-  }, [pid, codeInitialized, codeStorageKey]);
-
-  useEffect(() => {
-    if (!problem || codeInitialized) return;
+    if (!problem || codeInitialized || loadingMe) return;
+    // no saved code available; fall back to starter
     setCode(problem.starter_code || DEFAULT_CODE);
     setCodeInitialized(true);
-  }, [problem, codeInitialized]);
+  }, [problem, codeInitialized, loadingMe]);
 
-  // 코드 자동 저장
+  // 주차 내 문제 목록 로드 (주차 컨텍스트가 있을 때만)
   useEffect(() => {
-    if (!Number.isFinite(pid) || !codeInitialized || !codeStorageKey) return;
-    try {
-      window.localStorage.setItem(codeStorageKey, code);
-    } catch {
-      // ignore write failures
+    if (!hasWeekContext) {
+      setWeekProblems([]);
+      setCurrentIndex(null);
+      return;
     }
-  }, [pid, code, codeInitialized, codeStorageKey]);
+    if (!me || me.role !== "student") return;
+    setNavLoading(true);
+    setNavError(null);
+    api
+      .get<StudentClassDetail>(`/student/classes/${classId}`)
+      .then((res) => {
+        const all = res.data.problems || [];
+        const filtered =
+          weekValue === null
+            ? all.filter((p) => !p.week)
+            : all.filter((p) => p.week === weekValue);
+        const sorted = filtered
+          .slice()
+          .sort((a, b) => {
+            const aTime = a.assigned_at ? new Date(a.assigned_at).getTime() : 0;
+            const bTime = b.assigned_at ? new Date(b.assigned_at).getTime() : 0;
+            if (aTime !== bTime) return aTime - bTime;
+            return a.id - b.id;
+          });
+        setWeekProblems(sorted);
+        setNavError(null);
+      })
+      .catch(() => {
+        setWeekProblems([]);
+        setNavError("주차별 문제 목록을 불러오지 못했습니다.");
+      })
+      .finally(() => setNavLoading(false));
+  }, [hasWeekContext, me, classId, weekValue]);
 
-  // 실행 입력 초기값/저장값: 문제별로 로컬에 보관
+  useEffect(() => {
+    if (!Number.isFinite(pid)) {
+      setCurrentIndex(null);
+      return;
+    }
+    const idx = weekProblems.findIndex((p) => p.id === pid);
+    setCurrentIndex(idx >= 0 ? idx : null);
+  }, [pid, weekProblems]);
+
+  const goToIndex = (nextIndex: number) => {
+    if (!hasWeekContext) return;
+    if (nextIndex < 0 || nextIndex >= weekProblems.length) return;
+    const target = weekProblems[nextIndex];
+    const weekQuery = weekValueRaw ?? "";
+    void router.push(
+      `/problems/${target.id}?classId=${classId}&week=${encodeURIComponent(
+        weekQuery
+      )}&index=${nextIndex}`
+    );
+  };
+
+  const handlePrev = () => {
+    if (currentIndex === null) return;
+    goToIndex(currentIndex - 1);
+  };
+
+  const handleNext = () => {
+    if (currentIndex === null) return;
+    goToIndex(currentIndex + 1);
+  };
+
+  useEffect(() => {
+    if (currentIndex !== null) {
+      setTargetIndexInput(String(currentIndex + 1)); // 1-base로 표시
+    }
+  }, [currentIndex]);
+
+
+  const handleGoToIndex = () => {
+    if (!hasWeekContext) return;
+    const raw = targetIndexInput.trim();
+    if (raw === "") return;
+    const parsed = Number(raw);
+    const idx = parsed - 1; // UI is 1-based, internal is 0-based
+    if (!Number.isInteger(parsed) || idx < 0 || idx >= weekProblems.length) {
+      setNavError(`번호는 1에서 ${weekProblems.length} 사이의 정수를 입력하세요.`);
+      return;
+    }
+    setNavError(null);
+    goToIndex(idx);
+  };
+
+  // 실행 입력 초기값: 공개 샘플 첫 번째 input_text를 기본으로 사용
+  useEffect(() => {
+    if (!problem) {
+      setRunInput("");
+      setRunOutput(null);
+      return;
+    }
+    const sampleInput = problem.public_samples?.[0];
+    if (sampleInput) {
+      setRunInput(formatInput(sampleInput.raw_input_text ?? sampleInput.input_text ?? ""),);
+    }
+    
+    setRunOutput(null);
+    setRunError(null);      
+  }, [problem?.id, problem?.public_samples]);
+
+  /* 실행 입력 초기값/저장값: 문제별로 로컬에 보관
   useEffect(() => {
     if (!Number.isFinite(pid)) {
       setRunInput("");
       setRunOutput(null);
       return;
     }
-    let restored = false;
-    if (runInputStorageKey) {
-      try {
-        const saved = window.localStorage.getItem(runInputStorageKey);
-        if (saved !== null) {
-          setRunInput(saved);
-          restored = true;
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    if (!restored) {
-      const sampleInput = problem?.public_samples?.[0]?.input_text ?? "";
-      setRunInput(sampleInput);
-    }
+    const sampleInput =
+      problem?.public_samples?.[0]?.raw_input_text ??
+      problem?.public_samples?.[0]?.input_text ??
+      "";
+    setRunInput(formatInput(sampleInput));
     setRunOutput(null);
     setRunError(null);
   }, [pid, problem?.id, problem?.public_samples, runInputStorageKey]);
@@ -249,7 +383,7 @@ export default function ProblemPage() {
     } catch {
       // ignore write failures
     }
-  }, [pid, runInput, runInputStorageKey]);
+  }, [pid, runInput, runInputStorageKey]);*/
 
   // 실행 (채점 없이 즉시 결과 확인)
   const runCode = useCallback(async () => {
@@ -276,7 +410,7 @@ export default function ProblemPage() {
         stdinText = "";
       } catch {
         // JSON 파싱 실패 시, 간단한 3줄 포맷(한 줄 n, 한 줄 배열, 한 줄 target) 변환 시도
-        const converted = tryConvertSimpleInput(runInput);
+        const converted = tryConvertArgsKwargsInput(runInput);
         if (converted) {
           payload = converted;
           mode = "payload";
@@ -304,7 +438,7 @@ export default function ProblemPage() {
     } finally {
       setRunningCode(false);
     }
-  }, [pid, me, runInput, code]);
+  }, [pid, me, runInput, code, tryConvertArgsKwargsInput]);
 
   // 제출
   const submit = useCallback(async () => {
@@ -341,6 +475,18 @@ export default function ProblemPage() {
       setSubmitting(false);
     }
   }, [pid, code, me]);
+
+  const resetCodeToStarter = useCallback(() => {
+    if (!problem) return;
+    const confirmed =
+      typeof window !== "undefined"
+        ? window.confirm("작성한 코드를 모두 지우고 초기 starter code로 되돌릴까요?")
+        : true;
+    if (!confirmed) return;
+
+    const nextCode = problem.starter_code || DEFAULT_CODE;
+    setCode(nextCode);
+  }, [problem]);
 
   // 상태 폴링
   useEffect(() => {
@@ -383,6 +529,106 @@ export default function ProblemPage() {
           </div>
         )}
 
+        {hasWeekContext && (
+          <div className="mb-3 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowIndexList((v) => !v)}
+                  className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  {showIndexList ? "Hide problems" : "Show problems"}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePrev}
+                  disabled={
+                    navLoading ||
+                    currentIndex === null ||
+                    currentIndex <= 0 ||
+                    weekProblems.length === 0
+                  }
+                  className={`rounded border px-3 py-1 text-xs ${
+                    navLoading || currentIndex === null || currentIndex <= 0 || weekProblems.length === 0
+                      ? "cursor-not-allowed border-gray-200 text-gray-300"
+                      : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  Previous
+                </button>
+                <input
+                  type="text"
+                  min={1}
+                  max={weekProblems.length || undefined}
+                  value={targetIndexInput}
+                  onChange={(e) => setTargetIndexInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    if (navLoading || currentIndex === null || weekProblems.length === 0) {
+                      setNavError("Not valid index");
+                      return;
+                    }
+                    e.preventDefault();
+                    handleGoToIndex();
+                  }}
+                  className="w-10 rounded border border-gray-300 px-1 py-1 text-xs text-gray-700 hover:bg-gray-50 text-center"
+                />
+                <button
+                  onClick={handleNext}
+                  disabled={
+                    navLoading ||
+                    currentIndex === null ||
+                    weekProblems.length === 0 ||
+                    currentIndex >= weekProblems.length - 1
+                  }
+                  className={`rounded border px-3 py-1 text-xs ${
+                    navLoading ||
+                    currentIndex === null ||
+                    weekProblems.length === 0 ||
+                    currentIndex >= weekProblems.length - 1
+                      ? "cursor-not-allowed border-gray-200 text-gray-300"
+                      : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            {showIndexList && weekProblems.length > 0 && (
+              <div className="mt-2 max-h-40 w-full overflow-y-auto rounded border border-gray-200 bg-white p-2 text-xs text-gray-700">
+                <div className="mb-1 font-semibold">Problems in this week</div>
+                <ul className="space-y-1">
+                  {weekProblems.map((p, i) => (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (navLoading || weekProblems.length === 0) {
+                            setNavError("Not valid index");
+                            return;
+                          }
+                          setTargetIndexInput(String(i + 1)); // 입력칸도 맞춰주고
+                          setShowIndexList(false);
+                          goToIndex(i); // 바로 이동
+                        }}
+                        className="flex w-full items-center justify-between rounded px-2 py-1 text-left hover:bg-gray-50"
+                      >
+                        <span className="font-mono text-gray-600">{i + 1}</span>
+                        <span className="ml-2 flex-1 truncate">{p.title}</span>
+                        {currentIndex === i && <span className="ml-2 text-indigo-600">Current</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {navLoading && <div className="mt-2 text-xs text-gray-500">Loading week problems…</div>}
+            {navError && <div className="mt-2 text-xs text-red-600 text-right">{navError}</div>}
+          </div>
+        )}
+
         {!loadingMe && me && !me.is_verified && (
           <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             Your email is not verified. Please check your inbox (or use the verify link shown after sign-up in dev mode).
@@ -420,7 +666,7 @@ export default function ProblemPage() {
               </div>
 
               <div className="prose prose-sm max-w-none rounded-lg border bg-white px-5 py-4">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                   {(problem.statement_md ?? "").replace(/\\n/g, "\n")}
                 </ReactMarkdown>
               </div>
@@ -435,11 +681,15 @@ export default function ProblemPage() {
                     <li key={s.idx} className="grid grid-cols-2 gap-3 px-4 py-3 text-sm">
                       <div>
                         <div className="text-gray-500">Input</div>
-                        <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">{s.input_text}</pre>
+                        <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">
+                          {formatInput(s.raw_input_text ?? s.input_text)}
+                        </pre>
                       </div>
                       <div>
                         <div className="text-gray-500">Expected</div>
-                        <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">{s.expected_text}</pre>
+                        <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">
+                          {formatInput(s.raw_expected_text ?? s.expected_text)}
+                        </pre>
                       </div>
                     </li>
                   ))}
@@ -468,6 +718,13 @@ export default function ProblemPage() {
                     >
                       {!me ? "Login to Submit" : !me.is_verified ? "Verify email to submit" : submitting ? "Submitting…" : "Submit"}
                     </button>
+                    <button
+                      onClick={resetCodeToStarter}
+                      disabled={!problem}
+                      className="inline-flex items-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                    >
+                      Reset
+                    </button>
 
                     {subId && (
                       <div className="text-sm text-gray-700">
@@ -492,7 +749,10 @@ export default function ProblemPage() {
                         key={i}
                         onClick={() => {
                           const sample = problem?.public_samples?.[i];
-                          if (sample) setRunInput(sample.input_text || "");
+                          if (sample)
+                            setRunInput(
+                              formatInput(sample.raw_input_text ?? sample.input_text ?? ""),
+                            );
                         }}
                         disabled={!problem?.public_samples?.[i]}
                         className="inline-flex items-center rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"

@@ -4,7 +4,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PG_DSN = f"dbname={os.getenv('POSTGRES_DB')} user={os.getenv('POSTGRES_USER')} password={os.getenv('POSTGRES_PASSWORD')} host={os.getenv('POSTGRES_HOST')} port={os.getenv('POSTGRES_PORT')}"
+PG_SSLMODE = os.getenv("PG_SSLMODE", "require")  # Azure Postgres usually needs SSL; set to 'disable' for local dev
+PG_DSN = (
+    f"dbname={os.getenv('POSTGRES_DB')} "
+    f"user={os.getenv('POSTGRES_USER')} "
+    f"password={os.getenv('POSTGRES_PASSWORD')} "
+    f"host={os.getenv('POSTGRES_HOST')} "
+    f"port={os.getenv('POSTGRES_PORT')} "
+    f"sslmode={PG_SSLMODE}"
+)
 
 pool = SimpleConnectionPool(minconn=1, maxconn=10, dsn=PG_DSN)
 

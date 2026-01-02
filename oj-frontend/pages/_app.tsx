@@ -1,5 +1,6 @@
 import type { AppProps } from "next/app";
 import "@/styles/globals.css";
+import "katex/dist/katex.min.css";
 import NavBar from "@/components/NavBar";
 
 
