@@ -33,22 +33,22 @@
 - 태그/재시작 정책 권장: 서비스별 이미지 태그 고정(`backend:1.0.0`, `frontend:1.0.0`, `worker:1.0.0`) 후 compose에서 해당 태그 사용, `restart: always` 적용 시 장애 시 자동 재기동/롤백 용이.
 - 개발 예시
   1) `git pull`
-  2) 로컬 DB 컨테이너 포함 실행: `docker compose --env-file env/.env.dev up -d db backend worker frontend`
-  3) 코드 수정 후 필요하면 프론트/백엔드 빌드(`docker compose build frontend backend`)
+  2) 로컬 DB 컨테이너 포함 실행: `docker compose -p oj-dev --env-file env/.env.dev up -d db backend worker frontend`
+  3) 코드 수정 후 필요하면 프론트/백엔드 빌드(`docker compose -p oj-dev --env-file env/.env.dev build frontend backend`)
   4) 테스트 끝나면 `git add/commit/push`
 - 배포 예시
   1) 서버에서 `git pull` (또는 태그/이미지 pull)
-  2) Azure DB 사용, DB 컨테이너 생략: `docker compose --env-file env/.env.prod up -d backend worker frontend --no-deps`
+  2) Azure DB 사용, DB 컨테이너 생략: `docker compose -p oj-prod --env-file env/.env.prod up -d backend worker frontend --no-deps`
   3) 프론트는 prod API 베이스로 이미 빌드됨 (.env.prod)
 - 스키마 변경 반영(로컬→Azure)
   1) 로컬 DB에서 마이그레이션/DDL 적용 후 덤프:  
      `PGPASSWORD="ojpass" pg_dump -Fc -h localhost -p 5432 -U oj -d oj > dump_host.pg`
   2) Azure에 복원(덮어쓰기 주의): README의 “DB 덤프/복원” 절차로 `pg_restore` 실행
-  3) 필요 시 백엔드/워커 재시작: `docker compose --env-file .env.prod up -d backend worker frontend --no-deps`
+  3) 필요 시 백엔드/워커 재시작: `docker compose -p oj-prod --env-file .env.prod up -d backend worker frontend --no-deps`
 
 ## 4. systemd 관리(배포용)
 - 유닛: `/etc/systemd/system/online-judge.service`
-- 실행: `/usr/bin/docker compose --env-file env/.env.prod up -d backend worker frontend --no-deps`
+- 실행: `/usr/bin/docker compose -p oj-prod --env-file env/.env.prod up -d backend worker frontend --no-deps`
 - 시작/중지:
   ```bash
   sudo systemctl start online-judge.service

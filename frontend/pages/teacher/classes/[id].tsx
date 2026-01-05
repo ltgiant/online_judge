@@ -315,7 +315,7 @@ export default function TeacherClassDetailPage() {
           className="mt-4 rounded border px-4 py-2 text-sm"
           onClick={() => router.push("/teacher/classes")}
         >
-          Back to classes
+          클래스 목록으로
         </button>
       </div>
     );
@@ -382,7 +382,7 @@ export default function TeacherClassDetailPage() {
         className="text-sm text-indigo-600 underline"
         onClick={() => router.push("/teacher/classes")}
       >
-        ← Back to classes
+        ← 클래스 목록으로
       </button>
 
       <div className="rounded border bg-white p-4 shadow-sm">
@@ -417,7 +417,7 @@ export default function TeacherClassDetailPage() {
               onClick={handleAddTeacher}
               className="rounded border px-3 py-2 text-xs hover:bg-gray-50"
             >
-              Add
+              추가
             </button>
           </div>
         </div>
@@ -446,7 +446,7 @@ export default function TeacherClassDetailPage() {
                           className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
                           onClick={() => router.push(`/teacher/classes/${classId}/students/${s.id}/submissions`)}
                         >
-                          {s.username ?? s.email}'s submissions
+                          {s.username ?? s.email} 제출 기록
                         </button>
                       </td>
                     </tr>
@@ -466,7 +466,7 @@ export default function TeacherClassDetailPage() {
               onClick={handleAddStudent}
               className="rounded border px-3 py-2 text-xs hover:bg-gray-50"
             >
-              Add
+              추가
             </button>
           </div>
         </div>
@@ -479,7 +479,7 @@ export default function TeacherClassDetailPage() {
             className="rounded border px-3 py-1 font-semibold text-indigo-700 hover:bg-gray-50"
             onClick={handleAddNewWeekBanner}
           >
-            Add new week
+            새 주차 추가
           </button>
           <span className="text-gray-500">Adds the next week number to the dropdowns.</span>
         </div>
@@ -492,7 +492,7 @@ export default function TeacherClassDetailPage() {
                     className="rounded border px-2 py-0.5 text-[11px] font-normal text-gray-700 hover:bg-white"
                     onClick={() => toggleWeekOpen(label)}
                   >
-                    {openWeeks[label] ? "Hide" : "Open"}
+                    {openWeeks[label] ? "닫기" : "열기"}
                   </button>
                   <span>
                     {label}
@@ -507,7 +507,7 @@ export default function TeacherClassDetailPage() {
                       className="rounded border px-2 py-0.5 text-[11px] font-normal text-red-600 hover:bg-red-50"
                       onClick={() => handleRemoveWeekBanner(Number(label.replace("Week ", "")))}
                     >
-                      Remove week
+                      주차 삭제
                     </button>
                   )}
                 </div>
@@ -551,13 +551,13 @@ export default function TeacherClassDetailPage() {
                             void fetchManageProblem(p.id);
                           }}
                         >
-                          Manage
+                          관리
                         </button>
                         <button
                           className="rounded border border-red-500 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
                           onClick={() => handleRemoveProblem(p.id, p.title)}
                         >
-                          Remove
+                          삭제
                         </button>
                       </div>
                     </li>
@@ -575,7 +575,7 @@ export default function TeacherClassDetailPage() {
             className="w-full rounded border px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-gray-50"
             onClick={() => setShowCreateForm((prev) => !prev)}
           >
-            {showCreateForm ? "Close create form" : "Create problem"}
+            {showCreateForm ? "생성 폼 닫기" : "문제 생성"}
           </button>
           {showCreateForm && (
             <div className="rounded border p-3 text-xs space-y-2">
@@ -655,7 +655,7 @@ export default function TeacherClassDetailPage() {
                 onClick={handleCreateProblemForClass}
                 className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
               >
-                Create & assign
+                생성 및 배정
               </button>
             </div>
           )}
@@ -724,7 +724,7 @@ export default function TeacherClassDetailPage() {
                     className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
                     disabled={!manageProblem}
                   >
-                    Save changes
+                    변경 저장
                   </button>
                 </div>
               )}
@@ -749,7 +749,7 @@ export default function TeacherClassDetailPage() {
                   className="w-full rounded bg-purple-600 px-3 py-2 text-xs font-semibold text-white"
                   disabled={!csvProblemId}
                 >
-                  Upload CSV
+                  CSV 업로드
                 </button>
                 <p className="text-[11px] text-gray-500">
                   CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.
@@ -760,7 +760,7 @@ export default function TeacherClassDetailPage() {
                       className="mt-2 inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-gray-700 hover:bg-gray-50"
                       onClick={() => window.open(`/problems/${manageProblem.id}`, "_blank")}
                     >
-                      Open student view ↗
+                      학생 화면 열기 ↗
                     </button>
                   </div>
                 )}

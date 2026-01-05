@@ -79,7 +79,7 @@ export default function StudentClassesPage() {
           className="mt-4 rounded bg-indigo-600 px-4 py-2 text-white"
           onClick={() => router.push("/login")}
         >
-          Go to login
+          로그인으로 이동
         </button>
       </div>
     );
@@ -113,7 +113,7 @@ export default function StudentClassesPage() {
                 className="mt-3 rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                 onClick={() => router.push(`/student/classes/${cls.id}`)}
               >
-                View problems
+                문제 보기
               </button>
             </li>
           ))}
@@ -138,7 +138,7 @@ export default function StudentClassesPage() {
             disabled={joining}
             className="inline-flex items-center justify-center rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
           >
-            {joining ? "Joining..." : "Join"}
+            {joining ? "참여 중..." : "참여"}
           </button>
         </form>
         {joinMessage && <div className="mt-2 text-xs text-green-700">{joinMessage}</div>}

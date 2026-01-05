@@ -18,7 +18,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: backend/Dockerfile
     env_file: .env
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-db}
@@ -35,7 +35,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: backend/Dockerfile
     env_file: .env
     environment:
       POSTGRES_HOST: ${POSTGRES_HOST:-db}
@@ -52,7 +52,7 @@ services:
 
   frontend:
     build:
-      context: ./oj-frontend
+      context: ./frontend
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}

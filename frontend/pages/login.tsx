@@ -15,11 +15,11 @@ export default function LoginPage() {
     try {
       const r = await api.post("/auth/login", { email, password: pw });
       localStorage.setItem("access_token", r.data.access_token);
-      setMsg("Logged in. Redirecting...");
+      setMsg("로그인 완료. 이동 중...");
       window.location.href = "/"; // 또는 문제 목록으로
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
-      setMsg(detail ?? "Login failed");
+      setMsg(detail ?? "로그인 실패");
     } finally {
       setLoading(false);
     }
@@ -27,15 +27,15 @@ export default function LoginPage() {
 
   return (
     <form className="mx-auto max-w-md space-y-3" onSubmit={login}>
-      <h1 className="text-xl font-bold">Login</h1>
-      <input className="w-full rounded border p-2" placeholder="email" value={email} onChange={e=>setEmail(e.target.value)} />
-      <input className="w-full rounded border p-2" placeholder="password" type="password" value={pw} onChange={e=>setPw(e.target.value)} />
+      <h1 className="text-xl font-bold">로그인</h1>
+      <input className="w-full rounded border p-2" placeholder="이메일" value={email} onChange={e=>setEmail(e.target.value)} />
+      <input className="w-full rounded border p-2" placeholder="비밀번호" type="password" value={pw} onChange={e=>setPw(e.target.value)} />
       <button type="submit" disabled={loading} className="rounded bg-indigo-600 px-4 py-2 text-white">
-        {loading ? "Signing in..." : "Login"}
+        {loading ? "로그인 중..." : "로그인"}
       </button>
       {msg && <div className="text-sm text-gray-600">{msg}</div>}
       <div className="text-sm text-gray-600">
-        No account? <Link className="text-indigo-600 underline" href="/signup">Sign up</Link>
+        계정이 없나요? <Link className="text-indigo-600 underline" href="/signup">회원가입</Link>
       </div>
     </form>
   );

@@ -59,7 +59,7 @@ export default function ClassStudentSubmissionsPage() {
         <h1 className="text-xl font-semibold">Submissions</h1>
         <p className="mt-2 text-sm text-red-600">{error}</p>
         <button className="mt-3 rounded border px-3 py-1 text-sm" onClick={() => router.back()}>
-          Back
+          돌아가기
         </button>
       </div>
     );
@@ -68,7 +68,7 @@ export default function ClassStudentSubmissionsPage() {
   return (
     <div className="mx-auto max-w-5xl p-4 space-y-4">
       <button className="text-sm text-indigo-600 underline" onClick={() => router.back()}>
-        ← Back
+        ← 돌아가기
       </button>
       <div>
         <h1 className="text-2xl font-bold">Submissions</h1>

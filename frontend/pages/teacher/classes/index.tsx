@@ -69,7 +69,7 @@ export default function TeacherClassesListPage() {
             onClick={() => router.push("/login")}
             className="mt-4 rounded bg-indigo-600 px-4 py-2 text-white"
           >
-            Go to login
+            로그인으로 이동
           </button>
         )}
       </div>
@@ -104,7 +104,7 @@ export default function TeacherClassesListPage() {
             onClick={handleCreateClass}
             className="rounded bg-green-600 px-4 py-2 text-white"
           >
-            Create
+            생성
           </button>
         </div>
       </section>
@@ -133,7 +133,7 @@ export default function TeacherClassesListPage() {
                     className="rounded border px-3 py-1 text-xs hover:bg-gray-50"
                     onClick={() => router.push(`/teacher/classes/${cls.id}`)}
                   >
-                    Manage
+                    관리
                   </button>
                   <button
                     className="text-xs text-red-600 hover:underline"
@@ -148,7 +148,7 @@ export default function TeacherClassesListPage() {
                       }
                     }}
                   >
-                    Delete
+                    삭제
                   </button>
                 </div>
               </div>

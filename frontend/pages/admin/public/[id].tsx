@@ -63,7 +63,7 @@ export default function AdminProblemDetailPage() {
     return (
       <div className="p-6">
         <button className="text-sm text-indigo-600 underline" onClick={() => router.push("/admin/public")}>
-          ← Back
+          ← 돌아가기
         </button>
         <p className="mt-2 text-sm text-gray-600">Admin access required.</p>
       </div>
@@ -74,7 +74,7 @@ export default function AdminProblemDetailPage() {
     return (
       <div className="p-6">
         <button className="text-sm text-indigo-600 underline" onClick={() => router.push("/admin/public")}>
-          ← Back
+          ← 돌아가기
         </button>
         <p className="mt-2 text-sm text-gray-600">{error ?? "Problem not found."}</p>
       </div>
@@ -84,7 +84,7 @@ export default function AdminProblemDetailPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 space-y-5">
       <button className="text-sm text-indigo-600 underline" onClick={() => router.push("/admin/public")}>
-        ← Back to list
+        ← 목록으로
       </button>
 
       <section className="rounded border bg-white p-4 shadow-sm space-y-3">
@@ -140,7 +140,7 @@ export default function AdminProblemDetailPage() {
           onClick={uploadCsv}
           className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
         >
-          Upload
+          업로드
         </button>
         <p className="text-xs text-gray-500">
           CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.

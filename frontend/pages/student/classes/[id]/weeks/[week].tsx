@@ -109,7 +109,7 @@ export default function StudentClassWeekPage() {
           className="text-sm text-indigo-600 underline"
           onClick={() => router.push(`/student/classes/${classId}`)}
         >
-          ← Back to class
+          ← 클래스로
         </button>
         <p className="mt-3 text-sm text-red-600">Invalid week.</p>
       </div>
@@ -123,7 +123,7 @@ export default function StudentClassWeekPage() {
           className="text-sm text-indigo-600 underline"
           onClick={() => router.push("/student/classes")}
         >
-          ← Back
+          ← 돌아가기
         </button>
         <p className="mt-3 text-sm text-gray-600">{error ?? "Class not found."}</p>
       </div>
@@ -140,7 +140,7 @@ export default function StudentClassWeekPage() {
           className="text-sm text-indigo-600 underline"
           onClick={() => router.push(`/student/classes/${classId}`)}
         >
-          ← Back to class
+          ← 클래스로
         </button>
         <div className="text-sm text-gray-500">Class code: {detail.code}</div>
       </div>
@@ -180,7 +180,7 @@ export default function StudentClassWeekPage() {
                 href={`/problems/${current.id}`}
                 className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
               >
-                Open problem
+                문제 열기
               </Link>
             </div>
           </div>
@@ -196,7 +196,7 @@ export default function StudentClassWeekPage() {
                 : "border-gray-300 text-gray-700 hover:bg-gray-50"
             }`}
           >
-            Previous
+            이전
           </button>
           <button
             disabled={pageIndex >= total - 1 || total === 0}
@@ -207,7 +207,7 @@ export default function StudentClassWeekPage() {
                 : "border-gray-300 text-gray-700 hover:bg-gray-50"
             }`}
           >
-            Next
+            다음
           </button>
         </div>
       </section>
