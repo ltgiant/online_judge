@@ -1,4 +1,4 @@
-// oj-frontend/lib/useMe.ts
+// frontend/lib/useMe.ts
 import { useCallback, useEffect, useState } from "react";
 import api from "./api";
 

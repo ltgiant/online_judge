@@ -56,7 +56,7 @@ export default function StudentClassDetailPage() {
           className="text-sm text-indigo-600 underline"
           onClick={() => router.push("/student/classes")}
         >
-          ← Back
+          ← 돌아가기
         </button>
         <p className="mt-3 text-sm text-gray-600">{error ?? "Class not found."}</p>
       </div>
@@ -81,7 +81,7 @@ export default function StudentClassDetailPage() {
         className="text-sm text-indigo-600 underline"
         onClick={() => router.push("/student/classes")}
       >
-        ← Back to classes
+        ← 클래스 목록으로
       </button>
       <div className="mt-4 rounded border bg-white p-5 shadow-sm">
         <div className="text-2xl font-bold text-gray-900">{detail.name}</div>
@@ -126,7 +126,7 @@ export default function StudentClassDetailPage() {
                   }?autoOpen=1`}
                   className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-100"
                 >
-                  Open
+                  열기
                 </Link>
               </div>
             </div>

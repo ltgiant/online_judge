@@ -1,4 +1,4 @@
-// oj-frontend/pages/problems/[id].tsx
+// frontend/pages/problems/[id].tsx
 import { useRouter } from "next/router";
 import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
@@ -389,11 +389,11 @@ export default function ProblemPage() {
   const runCode = useCallback(async () => {
     if (!Number.isFinite(pid)) return;
     if (!me) {
-      setRunError("Login required. Please sign in first.");
+      setRunError("로그인이 필요합니다. 먼저 로그인하세요.");
       return;
     }
     if (!me.is_verified) {
-      setRunError("Email not verified. Please verify your email.");
+      setRunError("이메일 인증이 필요합니다. 이메일을 확인하세요.");
       return;
     }
     setRunningCode(true);
@@ -433,7 +433,7 @@ export default function ProblemPage() {
       const msg =
         e?.response?.status === 401
           ? "Not authenticated. Please log in and try again."
-          : e?.response?.data?.detail || "Run failed";
+          : e?.response?.data?.detail || "실행 실패";
       setRunError(msg);
     } finally {
       setRunningCode(false);
@@ -445,7 +445,7 @@ export default function ProblemPage() {
     if (!Number.isFinite(pid)) return;
 
     if (!me) {
-      setError("Login required. Please sign in first.");
+      setError("로그인이 필요합니다. 먼저 로그인하세요.");
       return;
     }
     if (!me.is_verified) {
@@ -469,7 +469,7 @@ export default function ProblemPage() {
       const msg =
         e?.response?.status === 401
           ? "Not authenticated. Please log in and try again."
-          : e?.response?.data?.detail || "Submit failed";
+          : e?.response?.data?.detail || "제출 실패";
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -525,11 +525,11 @@ export default function ProblemPage() {
 
         {error && (
           <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error} {!me && <a className="ml-2 underline" href="/login">Go to Login</a>}
+            {error} {!me && <a className="ml-2 underline" href="/login">로그인으로 이동</a>}
           </div>
         )}
 
-        {hasWeekContext && (
+        {!loading && hasWeekContext && (
           <div className="mb-3 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -716,14 +716,14 @@ export default function ProblemPage() {
                       disabled={submitting || !canSubmit}
                       className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                     >
-                      {!me ? "Login to Submit" : !me.is_verified ? "Verify email to submit" : submitting ? "Submitting…" : "Submit"}
+                      {!me ? "로그인 후 제출" : !me.is_verified ? "이메일 인증 후 제출" : submitting ? "제출 중…" : "제출"}
                     </button>
                     <button
                       onClick={resetCodeToStarter}
                       disabled={!problem}
                       className="inline-flex items-center rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                     >
-                      Reset
+                      초기화
                     </button>
 
                     {subId && (
@@ -742,7 +742,7 @@ export default function ProblemPage() {
 
               <div className="rounded-lg border bg-white">
                 <div className="border-b px-4 py-2.5 text-sm font-semibold flex items-center justify-between gap-3">
-                  <span>Run</span>
+                  <span>실행</span>
                   <div className="flex items-center gap-2 justify-end">
                     {[0, 1, 2].map((i) => (
                       <button
@@ -757,7 +757,7 @@ export default function ProblemPage() {
                         disabled={!problem?.public_samples?.[i]}
                         className="inline-flex items-center rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                       >
-                        {problem?.public_samples?.[i] ? `Sample ${i + 1}` : `Sample ${i + 1}`}
+                        {problem?.public_samples?.[i] ? `샘플 ${i + 1}` : `샘플 ${i + 1}`}
                       </button>
                     ))}
                   </div>
@@ -776,7 +776,7 @@ export default function ProblemPage() {
                       disabled={runningCode || !canSubmit}
                       className="inline-flex items-center rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                     >
-                      {!me ? "Login to Run" : !me.is_verified ? "Verify email to run" : runningCode ? "Running…" : "Run"}
+                      {!me ? "로그인 후 실행" : !me.is_verified ? "이메일 인증 후 실행" : runningCode ? "실행 중…" : "실행"}
                     </button>
                     {runningCode && <span className="text-xs text-gray-600">Executing…</span>}
                   </div>
@@ -816,7 +816,7 @@ export default function ProblemPage() {
               <div className="rounded-lg border bg-white">
                 <div className="border-b px-4 py-2.5 text-sm font-semibold">Results</div>
                 {!results && (
-                  <div className="px-4 py-3 text-sm text-gray-500">Submit to see results. (Auto-refreshing…)</div>
+                  <div className="px-4 py-3 text-sm text-gray-500">제출하면 결과를 확인할 수 있습니다. (자동 갱신 중…)</div>
                 )}
                 {results && (
                   <div className="px-4 py-2 text-sm text-gray-700">
