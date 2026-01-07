@@ -40,7 +40,11 @@ JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "60"))
 
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="OJ Backend (MVP)")
+app = FastAPI(
+    title="OJ Backend (MVP)",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -154,6 +158,15 @@ class ClassProblemAssignIn(BaseModel):
         if (pid is None and newp is None) or (pid is not None and newp is not None):
             raise ValueError("Provide either problem_id or new_problem")
         return values
+
+class ClassWeekProblemOrderIn(BaseModel):
+    problem_ids: list[int] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_ids(self):
+        if len(self.problem_ids) != len(set(self.problem_ids)):
+            raise ValueError("Duplicate problem ids")
+        return self
 
 class ClassWeekCreateIn(BaseModel):
     week_no: int = Field(ge=1, le=52)
@@ -730,6 +743,7 @@ def teacher_list_class_problems(class_id: int, me: MeOut = Depends(get_current_u
             "assigned_by": p["assigned_by"],
             "assigned_by_name": p["assigned_by_name"],
             "week": p["week"],
+            "order_index": p["order_index"],
         }
         for p in problems
     ]
@@ -801,6 +815,27 @@ def teacher_update_problem(
     if payload.week is not None:
         logic.update_class_problem_week(class_id, problem_id, payload.week)
     return {"detail": "problem_updated"}
+
+@app.put("/teacher/classes/{class_id}/weeks/{week}/problems/order")
+def teacher_update_week_problem_order(
+    class_id: int,
+    week: int,
+    payload: ClassWeekProblemOrderIn,
+    me: MeOut = Depends(get_current_user),
+):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    week_id = logic.get_class_week_id(class_id, week)
+    if not week_id:
+        raise HTTPException(status_code=404, detail="Week not found")
+    ok = logic.update_week_problem_order(class_id, week, payload.problem_ids)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Invalid problem ids for week")
+    return {"detail": "order_updated"}
 
 @app.get("/student/classes")
 def student_list_classes(me: MeOut = Depends(get_current_user)):
@@ -874,6 +909,7 @@ def student_get_class(class_id: int, me: MeOut = Depends(get_current_user)):
                 "title": p["title"],
                 "difficulty": p["difficulty"],
                 "week": p["week"],
+                "order_index": p["order_index"],
             }
             for p in problems
         ],

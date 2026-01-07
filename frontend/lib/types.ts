@@ -86,7 +86,8 @@ export type ClassProblem = {
   assigned_at: string | null;
   assigned_by?: number | null;
   assigned_by_name?: string | null;
-   week: number | null;
+  week: number | null;
+  order_index?: number | null;
 };
 
 export type ClassSubmission = {

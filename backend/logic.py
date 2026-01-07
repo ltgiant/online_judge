@@ -282,6 +282,15 @@ def ensure_class_week(class_id: int, week_no: int) -> int:
         found = cur.fetchone()
         return found[0] if found else None
 
+def get_class_week_id(class_id: int, week_no: int) -> int | None:
+    with DB() as cur:
+        cur.execute(
+            "SELECT id FROM class_weeks WHERE class_id=%s AND week_no=%s",
+            (class_id, week_no),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
 def set_class_week_meta(class_id: int, week_no: int, title: str | None, description: str | None):
     with DB() as cur:
         cur.execute(
@@ -329,11 +338,16 @@ def add_problem_to_class(class_id: int, problem_id: int, assigned_by: int | None
     week_no = week or 1
     week_id = ensure_class_week(class_id, week_no)
     with DB() as cur:
+        cur.execute(
+            "SELECT COALESCE(MAX(order_index), 0) + 1 FROM class_week_problems WHERE class_week_id=%s",
+            (week_id,),
+        )
+        next_index = cur.fetchone()[0]
         cur.execute("""
-            INSERT INTO class_week_problems(class_week_id, problem_id, assigned_by)
-            VALUES (%s,%s,%s)
+            INSERT INTO class_week_problems(class_week_id, problem_id, assigned_by, order_index)
+            VALUES (%s,%s,%s,%s)
             ON CONFLICT (class_week_id, problem_id) DO NOTHING
-        """, (week_id, problem_id, assigned_by))
+        """, (week_id, problem_id, assigned_by, next_index))
 
 def list_class_students(class_id: int):
     with DB() as cur:
@@ -375,13 +389,14 @@ def list_class_teachers(class_id: int):
 def list_class_problems(class_id: int):
     with DB() as cur:
         cur.execute("""
-            SELECT p.id, p.slug, p.title, p.difficulty, cwp.assigned_at, cwp.assigned_by, u.username, u.email, cw.week_no
+            SELECT p.id, p.slug, p.title, p.difficulty, cwp.assigned_at, cwp.assigned_by, u.username, u.email,
+                   cw.week_no, cwp.order_index
             FROM class_week_problems cwp
             JOIN class_weeks cw ON cw.id = cwp.class_week_id
             JOIN problems p ON p.id = cwp.problem_id
             LEFT JOIN users u ON u.id = cwp.assigned_by
             WHERE cw.class_id=%s
-            ORDER BY cw.week_no, cwp.assigned_at DESC
+            ORDER BY cw.week_no, cwp.order_index, cwp.assigned_at
         """, (class_id,))
         return [
             {
@@ -393,6 +408,7 @@ def list_class_problems(class_id: int):
                 "assigned_by": r[5],
                 "assigned_by_name": r[6] or r[7],
                 "week": r[8],
+                "order_index": r[9],
             }
             for r in cur.fetchall()
         ]
@@ -630,20 +646,58 @@ def update_class_problem_week(class_id: int, problem_id: int, week: int):
     week_id = ensure_class_week(class_id, week)
     with DB() as cur:
         cur.execute(
+            "SELECT COALESCE(MAX(order_index), 0) + 1 FROM class_week_problems WHERE class_week_id=%s",
+            (week_id,),
+        )
+        next_index = cur.fetchone()[0]
+        cur.execute(
             """
             UPDATE class_week_problems cwp
-            SET class_week_id=%s
+            SET class_week_id=%s,
+                order_index=%s
             WHERE cwp.problem_id=%s
               AND cwp.class_week_id IN (SELECT id FROM class_weeks WHERE class_id=%s)
             """,
-            (week_id, problem_id, class_id),
+            (week_id, next_index, problem_id, class_id),
         )
         if cur.rowcount == 0:
             cur.execute(
                 """
-                INSERT INTO class_week_problems(class_week_id, problem_id)
-                VALUES (%s,%s)
+                INSERT INTO class_week_problems(class_week_id, problem_id, order_index)
+                VALUES (%s,%s,%s)
                 ON CONFLICT (class_week_id, problem_id) DO NOTHING
                 """,
-                (week_id, problem_id),
+                (week_id, problem_id, next_index),
             )
+
+def update_week_problem_order(class_id: int, week_no: int, problem_ids: list[int]) -> bool:
+    if not problem_ids:
+        return False
+    week_id = get_class_week_id(class_id, week_no)
+    if not week_id:
+        return False
+    with DB() as cur:
+        cur.execute(
+            """
+            SELECT problem_id
+            FROM class_week_problems
+            WHERE class_week_id=%s
+            """,
+            (week_id,),
+        )
+        existing = {r[0] for r in cur.fetchall()}
+        if set(problem_ids) != existing:
+            return False
+        order_map = {pid: idx + 1 for idx, pid in enumerate(problem_ids)}
+        cur.execute(
+            f"""
+            UPDATE class_week_problems
+            SET order_index = CASE problem_id
+                {" ".join(["WHEN %s THEN %s" for _ in problem_ids])}
+                ELSE order_index
+            END
+            WHERE class_week_id=%s AND problem_id = ANY(%s)
+            """,
+            tuple([v for pair in order_map.items() for v in pair] + [week_id, problem_ids]),
+        )
+    return True

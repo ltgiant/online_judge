@@ -47,7 +47,10 @@ const DEFAULT_CODE = `def answer(n: int, nums: list[int], target: int) -> tuple[
     return (0, 0)
 `;
 
-type StudentClassProblem = Pick<ClassProblem, "id" | "slug" | "title" | "difficulty" | "week" | "assigned_at">;
+type StudentClassProblem = Pick<
+  ClassProblem,
+  "id" | "slug" | "title" | "difficulty" | "week" | "assigned_at" | "order_index"
+>;
 type StudentClassDetail = {
   id: number;
   name: string;
@@ -255,6 +258,14 @@ export default function ProblemPage() {
     setCodeInitialized(true);
   }, [problem, codeInitialized, loadingMe]);
 
+  // 문제 변경시 Submission, Status, Result 초기화
+  useEffect(() => {
+    if (!Number.isFinite(pid)) return;
+    setSubId(null);
+    setStatus(null);
+    setResults(null);
+  }, [pid]);
+
   // 주차 내 문제 목록 로드 (주차 컨텍스트가 있을 때만)
   useEffect(() => {
     if (!hasWeekContext) {
@@ -276,6 +287,9 @@ export default function ProblemPage() {
         const sorted = filtered
           .slice()
           .sort((a, b) => {
+            const aOrder = a.order_index ?? 0;
+            const bOrder = b.order_index ?? 0;
+            if (aOrder !== bOrder) return aOrder - bOrder;
             const aTime = a.assigned_at ? new Date(a.assigned_at).getTime() : 0;
             const bTime = b.assigned_at ? new Date(b.assigned_at).getTime() : 0;
             if (aTime !== bTime) return aTime - bTime;
@@ -359,32 +373,6 @@ export default function ProblemPage() {
     setRunError(null);      
   }, [problem?.id, problem?.public_samples]);
 
-  /* 실행 입력 초기값/저장값: 문제별로 로컬에 보관
-  useEffect(() => {
-    if (!Number.isFinite(pid)) {
-      setRunInput("");
-      setRunOutput(null);
-      return;
-    }
-    const sampleInput =
-      problem?.public_samples?.[0]?.raw_input_text ??
-      problem?.public_samples?.[0]?.input_text ??
-      "";
-    setRunInput(formatInput(sampleInput));
-    setRunOutput(null);
-    setRunError(null);
-  }, [pid, problem?.id, problem?.public_samples, runInputStorageKey]);
-
-  // 실행 입력 자동 저장
-  useEffect(() => {
-    if (!Number.isFinite(pid) || !runInputStorageKey) return;
-    try {
-      window.localStorage.setItem(runInputStorageKey, runInput);
-    } catch {
-      // ignore write failures
-    }
-  }, [pid, runInput, runInputStorageKey]);*/
-
   // 실행 (채점 없이 즉시 결과 확인)
   const runCode = useCallback(async () => {
     if (!Number.isFinite(pid)) return;
@@ -409,7 +397,6 @@ export default function ProblemPage() {
         mode = "payload";
         stdinText = "";
       } catch {
-        // JSON 파싱 실패 시, 간단한 3줄 포맷(한 줄 n, 한 줄 배열, 한 줄 target) 변환 시도
         const converted = tryConvertArgsKwargsInput(runInput);
         if (converted) {
           payload = converted;

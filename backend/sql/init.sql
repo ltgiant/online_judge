@@ -70,8 +70,11 @@ CREATE TABLE IF NOT EXISTS class_week_problems (
   problem_id    BIGINT NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
   assigned_by   BIGINT REFERENCES users(id) ON DELETE CASCADE,
   assigned_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  order_index   INT NOT NULL,
   PRIMARY KEY (class_week_id, problem_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_class_week_problems_order ON class_week_problems(class_week_id, order_index);
 
 CREATE TABLE IF NOT EXISTS testcases (
   id            BIGSERIAL PRIMARY KEY,
