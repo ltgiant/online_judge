@@ -14,7 +14,7 @@ type StudentClassDetail = {
   description?: string | null;
   created_at: string | null;
   teachers: TeacherInfo[];
-  problems: Array<Pick<ClassProblem, "id" | "slug" | "title" | "difficulty" | "week">>;
+  problems: Array<Pick<ClassProblem, "id" | "slug" | "title" | "difficulty" | "week" | "order_index">>;
 };
 
 export default function StudentClassDetailPage() {
@@ -120,14 +120,24 @@ export default function StudentClassDetailPage() {
                     {problemsByWeek[label].length} problem{problemsByWeek[label].length === 1 ? "" : "s"}
                   </span>
                 </span>
-                <Link
-                  href={`/student/classes/${classId}/weeks/${
-                    label === "Unscheduled" ? "unscheduled" : label.replace("Week ", "")
-                  }?autoOpen=1`}
-                  className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-100"
-                >
-                  열기
-                </Link>
+                {problemsByWeek[label].length > 0 ? (
+                  <Link
+                    href={`/problems/${problemsByWeek[label][0].id}?classId=${classId}&week=${
+                      label === "Unscheduled" ? "unscheduled" : label.replace("Week ", "")
+                    }&index=0`}
+                    className="rounded border px-3 py-1 text-xs text-gray-700 hover:bg-gray-100"
+                  >
+                    열기
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="cursor-not-allowed rounded border border-gray-200 px-3 py-1 text-xs text-gray-300"
+                  >
+                    열기
+                  </button>
+                )}
               </div>
             </div>
           ))}

@@ -48,6 +48,7 @@ export default function TeacherClassDetailPage() {
 
   const [weekOptions, setWeekOptions] = useState<number[]>([]);
   const [openWeeks, setOpenWeeks] = useState<Record<string, boolean>>({});
+  const [orderSaving, setOrderSaving] = useState<Record<string, boolean>>({});
 
   const isTeacher = me && (me.role === "teacher" || me.role === "admin");
 
@@ -327,6 +328,14 @@ export default function TeacherClassDetailPage() {
     acc[label].push(prob);
     return acc;
   }, {});
+  Object.values(problemsByWeek).forEach((problems) => {
+    problems.sort((a, b) => {
+      const aOrder = a.order_index ?? 0;
+      const bOrder = b.order_index ?? 0;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.id - b.id;
+    });
+  });
   weekOptions.forEach((w) => {
     const label = `Week ${w}`;
     if (!problemsByWeek[label]) {
@@ -341,6 +350,36 @@ export default function TeacherClassDetailPage() {
 
   const toggleWeekOpen = (label: string) => {
     setOpenWeeks((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
+
+  const moveProblemInWeek = async (label: string, fromIndex: number, toIndex: number) => {
+    if (!Number.isInteger(classId)) return;
+    if (!label.startsWith("Week ")) return;
+    const weekNo = Number(label.replace("Week ", ""));
+    if (!Number.isInteger(weekNo)) return;
+    const current = problemsByWeek[label] ?? [];
+    if (toIndex < 0 || toIndex >= current.length) return;
+    const next = current.slice();
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    const updated = new Map<number, number>();
+    next.forEach((p, idx) => updated.set(p.id, idx + 1));
+    setClassProblems((prev) =>
+      prev.map((p) => (updated.has(p.id) ? { ...p, order_index: updated.get(p.id) } : p))
+    );
+    setOrderSaving((prev) => ({ ...prev, [label]: true }));
+    try {
+      await api.put(`/teacher/classes/${classId}/weeks/${weekNo}/problems/order`, {
+        problem_ids: next.map((p) => p.id),
+      });
+      setStatus("Problem order updated");
+      setError(null);
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? "Failed to update order");
+      await fetchClassProblems();
+    } finally {
+      setOrderSaving((prev) => ({ ...prev, [label]: false }));
+    }
   };
 
   const handleAddNewWeekBanner = () => {
@@ -443,10 +482,10 @@ export default function TeacherClassDetailPage() {
                       <td className="px-2 py-1">{s.email}</td>
                       <td className="px-2 py-1 text-right">
                         <button
-                          className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                          className="rounded border px-2 py-1 text-xs hover:bg-indigo-100"
                           onClick={() => router.push(`/teacher/classes/${classId}/students/${s.id}/submissions`)}
                         >
-                          {s.username ?? s.email} 제출 기록
+                          기록 열기
                         </button>
                       </td>
                     </tr>
@@ -517,11 +556,11 @@ export default function TeacherClassDetailPage() {
                   {problemsByWeek[label].length === 0 && (
                     <li className="px-3 py-2 text-xs text-gray-500">No problems in this week yet.</li>
                   )}
-                  {problemsByWeek[label].map((p) => (
+                  {problemsByWeek[label].map((p, idx) => (
                     <li key={p.id} className="flex items-start justify-between gap-2 px-3 py-2">
                       <div>
                         <div className="font-semibold">
-                          {p.title} <span className="text-xs text-gray-500">(# {p.id})</span>
+                          {p.title}
                         </div>
                         <div className="text-xs text-gray-500">
                           Slug: {p.slug} · Difficulty: {p.difficulty}
@@ -532,7 +571,29 @@ export default function TeacherClassDetailPage() {
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-start gap-2">
+                        {label.startsWith("Week ") && (
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              className="rounded border px-2 py-1 text-[11px] hover:bg-white"
+                              disabled={orderSaving[label] || idx === 0}
+                              onClick={() => moveProblemInWeek(label, idx, idx - 1)}
+                            >
+                              ▲
+                            </button>
+                            <button
+                              className="rounded border px-2 py-1 text-[11px] hover:bg-white"
+                              disabled={
+                                orderSaving[label] ||
+                                idx === problemsByWeek[label].length - 1
+                              }
+                              onClick={() => moveProblemInWeek(label, idx, idx + 1)}
+                            >
+                              ▼
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex flex-col items-end gap-1">
                         <button
                           className="rounded border px-2 py-1 text-xs hover:bg-white"
                           onClick={() => {
@@ -551,7 +612,7 @@ export default function TeacherClassDetailPage() {
                             void fetchManageProblem(p.id);
                           }}
                         >
-                          관리
+                          열기
                         </button>
                         <button
                           className="rounded border border-red-500 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
@@ -559,6 +620,7 @@ export default function TeacherClassDetailPage() {
                         >
                           삭제
                         </button>
+                        </div>
                       </div>
                     </li>
                   ))}
@@ -669,7 +731,7 @@ export default function TeacherClassDetailPage() {
               )}
               {manageProblem && (
                 <div className="space-y-2">
-                  <div className="text-sm font-semibold">{manageProblem.title}</div>
+                  <div className="text-sm font-semibold">{manageProblem.title} <span className="text-xs text-gray-500">(# {manageProblem.id})</span></div>
                   <div className="text-xs text-gray-500">Slug: {manageProblem.slug}</div>
                   <select
                     className="w-full rounded border p-2"

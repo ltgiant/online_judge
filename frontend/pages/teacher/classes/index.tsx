@@ -118,7 +118,7 @@ export default function TeacherClassesListPage() {
           {classes.map((cls) => (
             <li
               key={cls.id}
-              className="rounded border border-gray-200 p-3 text-sm hover:border-indigo-400 hover:bg-indigo-50"
+              className="rounded border border-gray-200 p-3 text-sm hover:border-indigo-400"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -130,13 +130,13 @@ export default function TeacherClassesListPage() {
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <button
-                    className="rounded border px-3 py-1 text-xs hover:bg-gray-50"
+                    className="rounded border px-2.5 py-1 text-xs hover:bg-gray-100"
                     onClick={() => router.push(`/teacher/classes/${cls.id}`)}
                   >
-                    관리
+                    열기
                   </button>
                   <button
-                    className="text-xs text-red-600 hover:underline"
+                    className="rounded border px-2.5 py-1 text-xs text-red-600 hover:bg-red-100"
                     onClick={async () => {
                       if (!confirm(`Delete class \"${cls.name}\"? This cannot be undone.`)) return;
                       try {
