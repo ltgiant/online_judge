@@ -58,6 +58,8 @@ type StudentClassDetail = {
   problems: StudentClassProblem[];
 };
 
+type LeftTab = "problem" | "run" | "submit";
+
 export default function ProblemPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -94,6 +96,7 @@ export default function ProblemPage() {
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
   const [targetIndexInput, setTargetIndexInput] = useState<string>("");
   const [showIndexList, setShowIndexList] = useState(false);
+  const [leftTab, setLeftTab] = useState<LeftTab>("problem");
   // 로그인/검증 상태
   const { me, loading: loadingMe } = useMe();
   const canSubmit = !!me && me.is_verified;
@@ -258,12 +261,13 @@ export default function ProblemPage() {
     setCodeInitialized(true);
   }, [problem, codeInitialized, loadingMe]);
 
-  // 문제 변경시 Submission, Status, Result 초기화
+  // 문제 변경시 Submission, Status, Result 초기화 및 문제 탭으로 고정
   useEffect(() => {
     if (!Number.isFinite(pid)) return;
     setSubId(null);
     setStatus(null);
     setResults(null);
+    setLeftTab("problem");
   }, [pid]);
 
   // 주차 내 문제 목록 로드 (주차 컨텍스트가 있을 때만)
@@ -376,6 +380,7 @@ export default function ProblemPage() {
   // 실행 (채점 없이 즉시 결과 확인)
   const runCode = useCallback(async () => {
     if (!Number.isFinite(pid)) return;
+    setLeftTab("run");
     if (!me) {
       setRunError("로그인이 필요합니다. 먼저 로그인하세요.");
       return;
@@ -407,6 +412,10 @@ export default function ProblemPage() {
           mode = "stdin";
         }
       }
+    } else {
+      payload = { args: [], kwargs: {} };
+      mode = "payload";
+      stdinText = "";
     }
 
     try {
@@ -430,6 +439,7 @@ export default function ProblemPage() {
   // 제출
   const submit = useCallback(async () => {
     if (!Number.isFinite(pid)) return;
+    setLeftTab("submit");
 
     if (!me) {
       setError("로그인이 필요합니다. 먼저 로그인하세요.");
@@ -516,7 +526,7 @@ export default function ProblemPage() {
           </div>
         )}
 
-        {!loading && hasWeekContext && (
+        {!loading && hasWeekContext && !error && (
           <div className="mb-3 rounded border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -626,11 +636,23 @@ export default function ProblemPage() {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4 lg:items-start lg:h-full lg:overflow-hidden">
             {/* 문제 본문 */}
             <section className="space-y-4 lg:max-h-[calc(100vh-140px)] lg:overflow-y-auto lg:pr-1">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-bold text-gray-900">{problem.title}</h1>
+                  <span
+                    className={clsx(
+                      "rounded-full px-3 py-1 text-xs font-semibold",
+                      problem.difficulty === "easy" && "bg-green-100 text-green-700",
+                      problem.difficulty === "medium" && "bg-yellow-100 text-yellow-700",
+                      problem.difficulty === "hard" && "bg-red-100 text-red-700"
+                    )}
+                  >
+                    {problem.difficulty}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   {me && (
-                    <div className="mt-1 text-xs text-gray-600">
+                    <div className="text-xs text-gray-600">
                       Status:{" "}
                       {solved ? (
                         <span className="font-semibold text-green-600">Solved</span>
@@ -639,49 +661,196 @@ export default function ProblemPage() {
                       )}
                     </div>
                   )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { key: "problem", label: "문제" },
+                      { key: "run", label: "실행" },
+                      { key: "submit", label: "제출" },
+                    ].map((t) => (
+                      <button
+                        key={t.key}
+                        onClick={() => setLeftTab(t.key as LeftTab)}
+                        className={clsx(
+                          "rounded-md px-3 py-1.5 text-sm font-semibold",
+                          leftTab === t.key
+                            ? "bg-slate-800 text-white"
+                            : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+                        )}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <span
-                  className={clsx(
-                    "rounded-full px-3 py-1 text-xs font-semibold",
-                    problem.difficulty === "easy" && "bg-green-100 text-green-700",
-                    problem.difficulty === "medium" && "bg-yellow-100 text-yellow-700",
-                    problem.difficulty === "hard" && "bg-red-100 text-red-700"
-                  )}
-                >
-                  {problem.difficulty}
-                </span>
               </div>
 
-              <div className="prose prose-sm max-w-none rounded-lg border bg-white px-5 py-4">
-                <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-                  {(problem.statement_md ?? "").replace(/\\n/g, "\n")}
-                </ReactMarkdown>
-              </div>
+              {leftTab === "problem" && (
+                <>
+                  <div className="prose prose-sm max-w-none rounded-lg border bg-white px-5 py-4">
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {(problem.statement_md ?? "").replace(/\\n/g, "\n")}
+                    </ReactMarkdown>
+                  </div>
 
-              <div className="rounded-lg border bg-white">
-                <div className="border-b px-4 py-2.5 text-sm font-semibold">Public Samples</div>
-                <ul className="divide-y">
-                  {problem.public_samples.length === 0 && (
-                    <li className="px-4 py-3 text-sm text-gray-500">None</li>
+                  <div className="rounded-lg border bg-white">
+                    <div className="border-b px-4 py-2.5 text-sm font-semibold">Public Samples</div>
+                    <ul className="divide-y">
+                      {problem.public_samples.length === 0 && (
+                        <li className="px-4 py-3 text-sm text-gray-500">None</li>
+                      )}
+                      {problem.public_samples.map((s) => (
+                        <li key={s.idx} className="grid grid-cols-2 gap-3 px-4 py-3 text-sm">
+                          <div>
+                            <div className="text-gray-500">Input</div>
+                            <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">
+                              {formatInput(s.raw_input_text ?? s.input_text)}
+                            </pre>
+                          </div>
+                          <div>
+                            <div className="text-gray-500">Expected</div>
+                            <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">
+                              {formatInput(s.raw_expected_text ?? s.expected_text)}
+                            </pre>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+              {leftTab === "run" && (
+                <div className="rounded-lg border bg-white p-3">
+                  {!runError && !runOutput && (
+                    <div className="text-sm text-gray-500">실행 결과가 여기에 표시됩니다.</div>
                   )}
-                  {problem.public_samples.map((s) => (
-                    <li key={s.idx} className="grid grid-cols-2 gap-3 px-4 py-3 text-sm">
+                  {runError && (
+                    <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{runError}</div>
+                  )}
+                  {runOutput && (
+                    <div className="space-y-2 rounded-md border bg-gray-50 p-3 text-xs">
+                      <div className="flex flex-wrap gap-3 text-gray-700">
+                        <span className="font-semibold">Mode:</span> <span className="font-mono">{runOutput.mode}</span>
+                        <span className="font-semibold">Time:</span> <span className="font-mono">{runOutput.time_ms} ms</span>
+                        <span className="font-semibold">Exit:</span> <span className="font-mono">{runOutput.return_code}</span>
+                      </div>
                       <div>
-                        <div className="text-gray-500">Input</div>
-                        <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">
-                          {formatInput(s.raw_input_text ?? s.input_text)}
+                        <div className="font-semibold text-gray-700">Return value</div>
+                        <pre className="whitespace-pre-wrap break-words rounded bg-white p-2 text-[12px] font-mono">
+                          {formatResult(runOutput.result)}
                         </pre>
                       </div>
                       <div>
-                        <div className="text-gray-500">Expected</div>
-                        <pre className="whitespace-pre-wrap rounded-md bg-gray-50 p-2">
-                          {formatInput(s.raw_expected_text ?? s.expected_text)}
+                        <div className="font-semibold text-gray-700">Stdout</div>
+                        <pre className="whitespace-pre-wrap break-words rounded bg-white p-2 text-[12px] font-mono">
+                          {runOutput.stdout || ""}
                         </pre>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                      <div>
+                        <div className="font-semibold text-gray-700">Stderr</div>
+                        <pre className="whitespace-pre-wrap break-words rounded bg-white p-2 text-[12px] font-mono text-red-700">
+                          {runOutput.stderr || ""}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {leftTab === "submit" && (
+                <div className="rounded-lg border bg-white">
+                  <div className="border-b px-4 py-2.5 text-sm font-semibold">Results</div>
+                  {!results && (
+                    <div className="px-4 py-3 text-sm text-gray-500">제출 결과가 여기에 표시됩니다.</div>
+                  )}
+                  {results && (
+                    <div className="px-4 py-2 text-sm text-gray-700">
+                      Passed: <span className="font-semibold">{passedCount}</span>
+                      {"/"}
+                      <span className="font-semibold">{totalCount}</span>
+                    </div>
+                  )}
+                  {results && displayedResults && displayedResults.length === 0 && (
+                    <div className="px-4 py-3 text-sm text-green-700">All testcases passed.</div>
+                  )}
+                  {displayedResults && displayedResults.length > 0 && (
+                    <div className="overflow-x-auto p-3">
+                      <table className="min-w-full border text-sm">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="border px-2 py-1 text-left">Verdict</th>
+                            <th className="border px-2 py-1 text-right">Time (ms)</th>
+                            <th className="border px-2 py-1 text-left">Input</th>
+                            <th className="border px-2 py-1 text-left">Expected</th>
+                            <th className="border px-2 py-1 text-left">Return value</th>
+                            <th className="border px-2 py-1 text-left">Stdout</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {displayedResults.map((r, i) => (
+                            <tr key={r.result_id ?? i} className="odd:bg-white even:bg-gray-50">
+                              <td className="border px-2 py-1">
+                                <span className={verdictClass(r.verdict)}>{r.verdict}</span>
+                              </td>
+                              <td className="border px-2 py-1 text-right">{r.time_ms}</td>
+                              <td className="border px-2 py-1">
+                                {r.verdict === "ok" ? (
+                                  ""
+                                ) : (
+                                  <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">
+                                    {formatInput(r.input_text)}
+                                  </pre>
+                                )}
+                              </td>
+                              <td className="border px-2 py-1">
+                                {r.verdict === "ok" ? (
+                                  ""
+                                ) : (
+                                  <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">
+                                    {formatExpected(r.expected_text)}
+                                  </pre>
+                                )}
+                              </td>
+                              <td className="border px-2 py-1">
+                                {r.verdict === "ok" ? (
+                                  ""
+                                ) : (
+                                  <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">
+                                    {r.return_value === null || r.return_value === undefined ? "" : formatResult(r.return_value)}
+                                  </pre>
+                                )}
+                              </td>
+                              <td className="border px-2 py-1">
+                                {r.verdict === "ok" ? (
+                                  ""
+                                ) : (
+                                  <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">{r.stdout}</pre>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {displayedResults && displayedResults.some((r) => r.stderr) && (
+                    <div className="px-3 pb-3">
+                      <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs">
+                        <div className="font-semibold text-red-700">Stderr</div>
+                        <div className="mt-2 space-y-2">
+                          {displayedResults.map((r, i) =>
+                            r.stderr ? (
+                              <div key={r.result_id ?? i}>
+                                <pre className="whitespace-pre-wrap break-words rounded bg-white p-2 text-[12px] text-red-700">
+                                  {r.stderr}
+                                </pre>
+                              </div>
+                            ) : null
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
             {/* 에디터/제출/결과 (오른쪽) */}
             <section className="flex flex-col gap-4 lg:max-h-[calc(100vh-140px)] lg:overflow-y-auto lg:pr-1">
@@ -698,6 +867,13 @@ export default function ProblemPage() {
                     />
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <button
+                      onClick={runCode}
+                      disabled={runningCode || !canSubmit}
+                      className="inline-flex items-center rounded-md bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      {!me ? "로그인 후 실행" : !me.is_verified ? "이메일 인증 후 실행" : runningCode ? "실행 중…" : "실행"}
+                    </button>
                     <button
                       onClick={submit}
                       disabled={submitting || !canSubmit}
@@ -757,135 +933,9 @@ export default function ProblemPage() {
                     onChange={(e) => setRunInput(e.target.value)}
                     placeholder='예) {"args": [1, [2,3]], "kwargs": {}} 또는 "raw stdin"'
                   />
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={runCode}
-                      disabled={runningCode || !canSubmit}
-                      className="inline-flex items-center rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-                    >
-                      {!me ? "로그인 후 실행" : !me.is_verified ? "이메일 인증 후 실행" : runningCode ? "실행 중…" : "실행"}
-                    </button>
-                    {runningCode && <span className="text-xs text-gray-600">Executing…</span>}
-                  </div>
-                  {runError && (
-                    <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{runError}</div>
-                  )}
-                  {runOutput && (
-                    <div className="space-y-2 rounded-md border bg-gray-50 p-3 text-xs">
-                      <div className="flex flex-wrap gap-3 text-gray-700">
-                        <span className="font-semibold">Mode:</span> <span className="font-mono">{runOutput.mode}</span>
-                        <span className="font-semibold">Time:</span> <span className="font-mono">{runOutput.time_ms} ms</span>
-                        <span className="font-semibold">Exit:</span> <span className="font-mono">{runOutput.return_code}</span>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-700">Return value</div>
-                        <pre className="whitespace-pre-wrap break-words rounded bg-white p-2 text-[12px] font-mono">
-                          {formatResult(runOutput.result)}
-                        </pre>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-700">Stdout</div>
-                        <pre className="whitespace-pre-wrap break-words rounded bg-white p-2 text-[12px] font-mono">
-                          {runOutput.stdout || ""}
-                        </pre>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-700">Stderr</div>
-                        <pre className="whitespace-pre-wrap break-words rounded bg-white p-2 text-[12px] font-mono text-red-700">
-                          {runOutput.stderr || ""}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
-              <div className="rounded-lg border bg-white">
-                <div className="border-b px-4 py-2.5 text-sm font-semibold">Results</div>
-                {!results && (
-                  <div className="px-4 py-3 text-sm text-gray-500">제출하면 결과를 확인할 수 있습니다. (자동 갱신 중…)</div>
-                )}
-                {results && (
-                  <div className="px-4 py-2 text-sm text-gray-700">
-                    Passed: <span className="font-semibold">{passedCount}</span>
-                    {"/"}
-                    <span className="font-semibold">{totalCount}</span>
-                  </div>
-                )}
-                {results && displayedResults && displayedResults.length === 0 && (
-                  <div className="px-4 py-3 text-sm text-green-700">All testcases passed.</div>
-                )}
-                {displayedResults && displayedResults.length > 0 && (
-                  <div className="overflow-x-auto p-3">
-                    <table className="min-w-full border text-sm">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="border px-2 py-1 text-left">Verdict</th>
-                          <th className="border px-2 py-1 text-right">Time (ms)</th>
-                          <th className="border px-2 py-1 text-left">Input</th>
-                          <th className="border px-2 py-1 text-left">Expected</th>
-                          <th className="border px-2 py-1 text-left">Return value</th>
-                          <th className="border px-2 py-1 text-left">Stdout</th>
-                          <th className="border px-2 py-1 text-left">Stderr</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayedResults.map((r, i) => (
-                          <tr key={r.result_id ?? i} className="odd:bg-white even:bg-gray-50">
-                            <td className="border px-2 py-1">
-                              <span className={verdictClass(r.verdict)}>{r.verdict}</span>
-                            </td>
-                            <td className="border px-2 py-1 text-right">{r.time_ms}</td>
-                            <td className="border px-2 py-1">
-                              {r.verdict === "ok" ? (
-                                ""
-                              ) : (
-                                <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">
-                                  {formatInput(r.input_text)}
-                                </pre>
-                              )}
-                            </td>
-                            <td className="border px-2 py-1">
-                              {r.verdict === "ok" ? (
-                                ""
-                              ) : (
-                                <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">
-                                  {formatExpected(r.expected_text)}
-                                </pre>
-                              )}
-                            </td>
-                            <td className="border px-2 py-1">
-                              {r.verdict === "ok" ? (
-                                ""
-                              ) : (
-                                <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">
-                                  {r.return_value === null || r.return_value === undefined ? "" : formatResult(r.return_value)}
-                                </pre>
-                              )}
-                            </td>
-                            <td className="border px-2 py-1">
-                              {r.verdict === "ok" ? (
-                                ""
-                              ) : (
-                                <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px]">{r.stdout}</pre>
-                              )}
-                            </td>
-                            <td className="border px-2 py-1">
-                              {r.verdict === "ok" ? (
-                                ""
-                              ) : (
-                                <pre className="max-h-40 whitespace-pre-wrap break-words text-[12px] text-red-700">
-                                  {r.stderr}
-                                </pre>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
             </section>
           </div>
         )}
