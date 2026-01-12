@@ -7,8 +7,10 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import clsx from "clsx";
+import Tour from "@/components/Tour"; // Joyride wrapper (client-only)
 import api from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { problemTourSteps } from "@/tours/problemTour"; // Tour steps separated for clarity/reuse
 import {
   ClassProblem,
   ProblemDetail,
@@ -46,6 +48,7 @@ const DEFAULT_CODE = `def answer(n: int, nums: list[int], target: int) -> tuple[
     # TODO: implement
     return (0, 0)
 `;
+const TOUR_STORAGE_KEY = "tour:problem-page:v1";
 
 type StudentClassProblem = Pick<
   ClassProblem,
@@ -97,6 +100,8 @@ export default function ProblemPage() {
   const [targetIndexInput, setTargetIndexInput] = useState<string>("");
   const [showIndexList, setShowIndexList] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("problem");
+  const [tourRun, setTourRun] = useState(false); // controls whether the tour is running
+  const [tourSeen, setTourSeen] = useState(false); // tracks if the tour was seen in this browser
   // 로그인/검증 상태
   const { me, loading: loadingMe } = useMe();
   const canSubmit = !!me && me.is_verified;
@@ -109,6 +114,31 @@ export default function ProblemPage() {
   const weekValue = weekValueRaw === "unscheduled" ? null : Number(weekValueRaw);
   const hasWeekContext =
     (weekValueRaw === "unscheduled" || Number.isInteger(weekValue)) && Number.isInteger(classId);
+
+  const handleTourFinish = useCallback(() => {
+    // stop the tour and mark it as seen (persisted per-browser)
+    setTourRun(false);
+    setTourSeen(true);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(TOUR_STORAGE_KEY, "1");
+      } catch {
+        // ignore storage errors (e.g. blocked storage)
+      }
+    }
+  }, []);
+
+  const handleStartTour = useCallback(() => {
+    // reset view to the problem tab so tour targets are visible
+    setLeftTab("problem");
+    setTourSeen(false);
+    setTourRun(false);
+    if (typeof window !== "undefined") {
+      window.setTimeout(() => setTourRun(true), 0);
+    } else {
+      setTourRun(true);
+    }
+  }, []);
 
   const tryConvertArgsKwargsInput = useCallback((text: string) => {
     const lines = text
@@ -215,7 +245,21 @@ export default function ProblemPage() {
   const passedCount = results ? results.filter((r) => r.verdict === "ok").length : 0;
   const totalCount = totalTestcases ?? (results ? results.length : 0);
 
-  
+  useEffect(() => {
+    // start the tour after the problem section is actually rendered
+    if (loading || !problem) return;
+    if (typeof window === "undefined") return;
+    let seen = false;
+    try {
+      seen = window.localStorage.getItem(TOUR_STORAGE_KEY) === "1";
+    } catch {
+      // ignore storage errors
+    }
+    setTourSeen(seen);
+    if (seen) return;
+    const id = window.setTimeout(() => setTourRun(true), 0);
+    return () => window.clearTimeout(id);
+  }, [loading, problem]);
 
   // 문제 상세 로드
   useEffect(() => {
@@ -517,6 +561,8 @@ export default function ProblemPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 lg:h-full lg:overflow-hidden">
+      {/* Joyride overlay; targets map to data-tour attributes below */}
+      <Tour steps={problemTourSteps} run={tourRun} onFinish={handleTourFinish} />
       <main className="w-full px-2 sm:px-3 lg:px-4 py-3 lg:py-0 lg:h-full lg:overflow-hidden lg:box-border">
         {loading && <div className="text-gray-500">Loading…</div>}
 
@@ -637,7 +683,8 @@ export default function ProblemPage() {
             {/* 문제 본문 */}
             <section className="space-y-4 lg:max-h-[calc(100vh-140px)] lg:overflow-y-auto lg:pr-1">
               <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
+                {/* data-tour attributes below are used as Joyride targets */}
+                <div className="flex flex-wrap items-center gap-2" data-tour="problem-title">
                   <h1 className="text-xl font-bold text-gray-900">{problem.title}</h1>
                   <span
                     className={clsx(
@@ -661,7 +708,7 @@ export default function ProblemPage() {
                       )}
                     </div>
                   )}
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2" data-tour="problem-tabs">
                     {[
                       { key: "problem", label: "문제" },
                       { key: "run", label: "실행" },
@@ -680,19 +727,29 @@ export default function ProblemPage() {
                         {t.label}
                       </button>
                     ))}
+                    <button
+                      type="button"
+                      onClick={handleStartTour}
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                    >
+                      튜토리얼 보기
+                    </button>
                   </div>
                 </div>
               </div>
 
               {leftTab === "problem" && (
                 <>
-                  <div className="prose prose-sm max-w-none rounded-lg border bg-white px-5 py-4">
+                  <div
+                    className="prose prose-sm max-w-none rounded-lg border bg-white px-5 py-4"
+                    data-tour="problem-statement"
+                  >
                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                       {(problem.statement_md ?? "").replace(/\\n/g, "\n")}
                     </ReactMarkdown>
                   </div>
 
-                  <div className="rounded-lg border bg-white">
+                  <div className="rounded-lg border bg-white" data-tour="public-samples">
                     <div className="border-b px-4 py-2.5 text-sm font-semibold">Public Samples</div>
                     <ul className="divide-y">
                       {problem.public_samples.length === 0 && (
@@ -857,7 +914,7 @@ export default function ProblemPage() {
               <div className="rounded-lg border bg-white">
                 <div className="border-b px-4 py-2.5 text-sm font-semibold">Editor (Python)</div>
                 <div className="p-3">
-                  <div className="overflow-hidden rounded-md border">
+                  <div className="overflow-hidden rounded-md border" data-tour="editor">
                     <MonacoEditor
                       height="420px"
                       defaultLanguage="python"
@@ -870,6 +927,7 @@ export default function ProblemPage() {
                     <button
                       onClick={runCode}
                       disabled={runningCode || !canSubmit}
+                      data-tour="run-btn"
                       className="inline-flex items-center rounded-md bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                     >
                       {!me ? "로그인 후 실행" : !me.is_verified ? "이메일 인증 후 실행" : runningCode ? "실행 중…" : "실행"}
@@ -877,6 +935,7 @@ export default function ProblemPage() {
                     <button
                       onClick={submit}
                       disabled={submitting || !canSubmit}
+                      data-tour="submit-btn"
                       className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                     >
                       {!me ? "로그인 후 제출" : !me.is_verified ? "이메일 인증 후 제출" : submitting ? "제출 중…" : "제출"}
@@ -932,6 +991,7 @@ export default function ProblemPage() {
                     value={runInput}
                     onChange={(e) => setRunInput(e.target.value)}
                     placeholder='예) {"args": [1, [2,3]], "kwargs": {}} 또는 "raw stdin"'
+                    data-tour="run-input"
                   />
                 </div>
               </div>

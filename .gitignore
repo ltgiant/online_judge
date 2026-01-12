@@ -19,6 +19,7 @@ node_modules/
 out/
 dist/
 *.log
+*.pg
 
 # OS / IDE
 .DS_Store
@@ -32,3 +33,6 @@ WORKFLOW.md
 env/.env.dev
 env/.env.prod
 !env/env.example
+
+# Local dev compose overrides
+docker-compose.rundev.yml

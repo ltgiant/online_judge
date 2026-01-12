@@ -51,6 +51,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3100",
+        "http://127.0.0.1:3100",
         "http://35.216.0.27:3000",        # GCE 외부 IP:3000 추가
         "http://35.216.0.27:3100",
         "https://cotea.io",

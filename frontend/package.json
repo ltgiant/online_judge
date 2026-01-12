@@ -16,6 +16,7 @@
     "next": "16.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "react-joyride": "^2.9.3",
     "react-markdown": "^10.1.0",
     "rehype-katex": "^7.0.0",
     "remark-gfm": "^4.0.1",
