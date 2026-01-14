@@ -20,3 +20,6 @@ class TestcaseCreate(BaseModel):
 class SubmissionCreate(BaseModel):
     problem_id: int
     source_code: str  # Python only for MVP
+
+class DraftUpsert(BaseModel):
+    code: str

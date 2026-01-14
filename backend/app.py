@@ -31,7 +31,7 @@ from backend.auth import (
     consume_verify_token,
 )
 from backend.emailer import send_verify_email, SMTPConfigError, is_smtp_configured
-from backend.schemas import SubmissionCreate, ProblemCreate  # import early for type usage
+from backend.schemas import SubmissionCreate, ProblemCreate, DraftUpsert  # import early for type usage
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3100",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3100",
         "http://35.216.0.27:3000",        # GCE 외부 IP:3000 추가
         "http://35.216.0.27:3100",
         "https://cotea.io",
@@ -944,6 +946,47 @@ def get_my_submissions(pid: int, me: MeOut = Depends(get_current_user)):
             for s in submissions
         ],
     }
+
+@app.get("/problems/{pid}/draft")
+def get_problem_draft(pid: int, me: MeOut = Depends(get_current_user)):
+    if not logic.problem_exists(pid):
+        raise HTTPException(status_code=404, detail="Problem not found")
+    class_ids = logic.problem_class_ids(pid)
+    if class_ids:
+        allowed = False
+        if me.role == "admin":
+            allowed = True
+        elif me.role == "teacher" and logic.teacher_has_problem_access(me.id, pid):
+            allowed = True
+        elif me.role == "student" and logic.student_has_problem_access(me.id, pid):
+            allowed = True
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Forbidden")
+    code = logic.get_user_problem_draft(me.id, pid)
+    return {"code": code}
+
+@app.put("/problems/{pid}/draft")
+def put_problem_draft(
+    pid: int,
+    payload: DraftUpsert,
+    me: MeOut = Depends(get_current_user),
+):
+    if not logic.problem_exists(pid):
+        raise HTTPException(status_code=404, detail="Problem not found")
+    class_ids = logic.problem_class_ids(pid)
+    if class_ids:
+        allowed = False
+        if me.role == "admin":
+            allowed = True
+        elif me.role == "teacher" and logic.teacher_has_problem_access(me.id, pid):
+            allowed = True
+        elif me.role == "student" and logic.student_has_problem_access(me.id, pid):
+            allowed = True
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Forbidden")
+    logic.upsert_user_problem_draft(me.id, pid, payload.code)
+    return {"detail": "draft_saved"}
+
 @app.post("/teacher/classes/{class_id}/problems/{problem_id}/testcases/upload")
 async def teacher_upload_testcases(
     class_id: int,
