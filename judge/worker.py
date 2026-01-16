@@ -2,7 +2,7 @@ import os, time, json
 import psycopg2
 from psycopg2.extras import DictCursor
 from dotenv import load_dotenv
-from runner_py import run_python, run_python_answer
+from runner_py import run_python, run_python_answer, run_python_robot
 
 load_dotenv()
 PG_SSLMODE = os.getenv("PG_SSLMODE", "require")
@@ -35,7 +35,20 @@ def pick_one(conn):
 
 def fetch_submission(conn, sid):
     with conn.cursor(cursor_factory=DictCursor) as cur:
-        cur.execute("SELECT problem_id, language, source_code FROM submissions WHERE id=%s", (sid,))
+        cur.execute("""
+            SELECT s.problem_id, s.language, s.source_code, p.problem_type
+            FROM submissions s
+            JOIN problems p ON p.id = s.problem_id
+            WHERE s.id=%s
+        """, (sid,))
+        return cur.fetchone()
+
+def load_robot_config(conn, pid):
+    with conn.cursor(cursor_factory=DictCursor) as cur:
+        cur.execute("""
+          SELECT grid, start, walls, coins, goal, config
+          FROM robot_problems WHERE problem_id=%s
+        """, (pid,))
         return cur.fetchone()
 
 def load_testcases(conn, pid):
@@ -104,6 +117,21 @@ def parse_payload_output(out: str) -> tuple[any, str]:
             pass
     return None, out
 
+def parse_robot_output(out: str) -> dict | None:
+    if not out:
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        pass
+    brace = out.find("{")
+    if brace != -1:
+        try:
+            return json.loads(out[brace:])
+        except json.JSONDecodeError:
+            pass
+    return None
+
 def main():
     conn = psycopg2.connect(DSN)
     conn.autocommit = False
@@ -115,8 +143,71 @@ def main():
             continue
 
         sub = fetch_submission(conn, sid)
-        pid, lang, src = sub["problem_id"], sub["language"], sub["source_code"]
+        pid = sub["problem_id"]
+        lang = sub["language"]
+        src = sub["source_code"]
+        problem_type = (sub.get("problem_type") or "standard").strip()
         tcs = load_testcases(conn, pid)
+
+        if problem_type == "robot":
+            if not tcs:
+                finalize(conn, sid, "system_error", 0, 0)
+                continue
+
+            tc = tcs[0]
+            tcid = tc["id"]
+            timeout_ms = tc["timeout_ms"]
+
+            cfg = load_robot_config(conn, pid)
+            if not cfg:
+                insert_result(conn, sid, tcid, "re", 0, "", "Robot config not found")
+                finalize(conn, sid, "system_error", 0, 0)
+                continue
+
+            config = cfg.get("config") or {
+                "grid": cfg["grid"],
+                "start": cfg["start"],
+                "walls": cfg["walls"],
+                "coins": cfg["coins"],
+                "goal": cfg["goal"],
+            }
+
+            code, out, err, elapsed = run_python_robot(src, config, timeout_ms)
+            max_time = elapsed
+            final_status = "accepted"
+
+            if code == 124:
+                verdict = "tle"
+                final_status = "tle"
+                stdout_to_store = ""
+            elif code != 0:
+                verdict = "re"
+                final_status = "runtime_error"
+                stdout_to_store = ""
+            else:
+                payload = parse_robot_output(out or "")
+                if not payload:
+                    verdict = "re"
+                    final_status = "runtime_error"
+                    stdout_to_store = out
+                else:
+                    is_valid = bool(payload.get("is_valid", True))
+                    is_correct = bool(payload.get("is_correct", False))
+                    if not is_valid:
+                        verdict = "re"
+                        final_status = "runtime_error"
+                    elif is_correct:
+                        verdict = "ok"
+                    else:
+                        verdict = "wa"
+                        final_status = "wrong_answer"
+                    stdout_to_store = json.dumps(payload, ensure_ascii=False)
+
+            insert_result(conn, sid, tcid, verdict, elapsed, stdout_to_store, err)
+            conn.commit()
+            score = 1 if verdict == "ok" else 0
+            finalize(conn, sid, final_status, score, max_time)
+            continue
 
         total_ok = 0
         max_time = 0

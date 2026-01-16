@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List
 
 class ProblemCreate(BaseModel):
@@ -20,3 +20,36 @@ class TestcaseCreate(BaseModel):
 class SubmissionCreate(BaseModel):
     problem_id: int
     source_code: str  # Python only for MVP
+
+
+class RobotProblemConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    grid: dict
+    start: dict
+    walls: list[dict] = Field(default_factory=list)
+    coins: list[dict] = Field(default_factory=list)
+    goal: dict
+
+
+class RobotProblemCreate(BaseModel):
+    slug: str
+    title: str
+    difficulty: str = Field(pattern="^(easy|medium|hard)$")
+    statement_md: str
+    starter_code: str | None = None
+    config: RobotProblemConfig
+
+
+class RobotProblemOut(BaseModel):
+    problem_id: int
+    robot_pid: int
+    slug: str
+    title: str
+    difficulty: str
+    statement_md: str
+    starter_code: str | None = None
+    config: RobotProblemConfig
+
+
+class RobotProblemCreateWithWeek(RobotProblemCreate):
+    week: int = Field(ge=1, le=52)
