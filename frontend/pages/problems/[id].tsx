@@ -1,6 +1,6 @@
 // frontend/pages/problems/[id].tsx
 import { useRouter } from "next/router";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -12,6 +12,7 @@ import { useMe } from "@/lib/useMe";
 import {
   ClassProblem,
   ProblemDetail,
+  RobotProblemOut,
   SubmissionSummary,
   SubmissionResult,
   SubmissionResultsResponse,
@@ -97,6 +98,8 @@ export default function ProblemPage() {
   const [targetIndexInput, setTargetIndexInput] = useState<string>("");
   const [showIndexList, setShowIndexList] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("problem");
+  const [isRobotProblem, setIsRobotProblem] = useState(false);
+  const [robotConfig, setRobotConfig] = useState<RobotProblemOut | null>(null);
   // 로그인/검증 상태
   const { me, loading: loadingMe } = useMe();
   const canSubmit = !!me && me.is_verified;
@@ -122,15 +125,25 @@ export default function ProblemPage() {
       try {
         return JSON.parse(raw);
       } catch {
-        const tokens = raw.split(/\s+/).filter(Boolean);
-        if (tokens.length > 1) {
-          const nums = tokens.map((t) => Number(t));
-          if (nums.every((n) => Number.isFinite(n))) return nums;
-          return tokens;
+        const trimmed = raw.trim();
+        const parseToken = (token: string) => {
+          const num = Number(token);
+          return Number.isFinite(num) ? num : token;
+        };
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+          const inner = trimmed.slice(1, -1).trim();
+          if (!inner) return [];
+          return inner
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .map(parseToken);
         }
-        const num = Number(raw);
-        if (Number.isFinite(num)) return num;
-        return raw;
+        const tokens = trimmed.split(/[,\s]+/).filter(Boolean);
+        if (tokens.length > 1) {
+          return tokens.map(parseToken);
+        }
+        return parseToken(trimmed);
       }
     };
 
@@ -214,6 +227,328 @@ export default function ProblemPage() {
   const displayedResults = results ? results.filter((r) => r.verdict !== "ok") : null;
   const passedCount = results ? results.filter((r) => r.verdict === "ok").length : 0;
   const totalCount = totalTestcases ?? (results ? results.length : 0);
+  const robotResult = results?.find((r) => r.robot_result)?.robot_result ?? null;
+  const rawRobotPath = Array.isArray(robotResult?.path) ? robotResult.path : [];
+  const robotActions = Array.isArray(robotResult?.actions) ? robotResult.actions : [];
+  const startForFrames = robotConfig?.config?.start ?? robotResult?.start;
+  const needsStartFrame =
+    startForFrames &&
+    typeof startForFrames.x === "number" &&
+    typeof startForFrames.y === "number" &&
+    (rawRobotPath.length === 0 ||
+      rawRobotPath[0]?.x !== startForFrames.x ||
+      rawRobotPath[0]?.y !== startForFrames.y ||
+      rawRobotPath[0]?.dir !== startForFrames.dir);
+  const totalFrames = rawRobotPath.length + (needsStartFrame ? 1 : 0);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const actionIndex = needsStartFrame ? frameIndex - 1 : frameIndex;
+  const currentAction =
+    actionIndex >= 0 && actionIndex < robotActions.length ? robotActions[actionIndex]?.cmd : null;
+  const pathIndex = needsStartFrame ? frameIndex - 1 : frameIndex;
+  const currentCoins =
+    pathIndex >= 0 && pathIndex < rawRobotPath.length && typeof rawRobotPath[pathIndex]?.coins === "number"
+      ? rawRobotPath[pathIndex].coins
+      : 0;
+
+  const runCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const submitCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const playTimerRef = useRef<number | null>(null);
+  const robotImagesRef = useRef<Record<string, HTMLImageElement> | null>(null);
+  const [robotImagesReady, setRobotImagesReady] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => {
+    if (robotImagesRef.current) return;
+    const entries: [string, string][] = [
+      ["top", "/robot_image/robot_top.png"],
+      ["right", "/robot_image/robot_right.png"],
+      ["bottom", "/robot_image/robot_bottom.png"],
+      ["left", "/robot_image/robot_left.png"],
+    ];
+    const images: Record<string, HTMLImageElement> = {};
+    let loaded = 0;
+    const handleDone = () => {
+      loaded += 1;
+      if (loaded === entries.length) setRobotImagesReady(true);
+    };
+    entries.forEach(([dir, src]) => {
+      const img = new Image();
+      img.onload = handleDone;
+      img.onerror = handleDone;
+      img.src = src;
+      images[dir] = img;
+    });
+    robotImagesRef.current = images;
+  }, []);
+
+  useEffect(() => {
+    setFrameIndex(0);
+    setIsPlaying(false);
+  }, [robotResult]);
+
+  useEffect(() => {
+    if (!isRobotProblem) return;
+    const stopPlayback = () => {
+      if (playTimerRef.current !== null) {
+        window.clearInterval(playTimerRef.current);
+        playTimerRef.current = null;
+      }
+    };
+
+    const getCanvasScale = (canvas: HTMLCanvasElement) => {
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(1, Math.floor(rect.width * dpr));
+      const height = Math.max(1, Math.floor(rect.height * dpr));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      return { width, height };
+    };
+
+    const drawPlaceholder = (canvas: HTMLCanvasElement | null, text: string) => {
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const { width, height } = getCanvasScale(canvas);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, width / 2, height / 2);
+    };
+
+    const drawFrame = (canvas: HTMLCanvasElement | null, frameIndex: number, payload: any) => {
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const { width, height } = getCanvasScale(canvas);
+      const config = robotConfig?.config;
+      const grid = payload?.grid ?? config?.grid ?? { width: 10, height: 10 };
+      const walls = Array.isArray(payload?.walls)
+        ? payload.walls
+        : Array.isArray(config?.walls)
+        ? config?.walls
+        : [];
+      const initialCoins = Array.isArray(payload?.coins)
+        ? payload.coins
+        : Array.isArray(config?.coins)
+        ? config?.coins
+        : [];
+      const coinsRemaining = Array.isArray(payload?.coins_remaining) ? payload.coins_remaining : [];
+      const startState = config?.start ?? payload?.start;
+      const rawPath = Array.isArray(payload?.path) ? payload.path : [];
+      const actions = Array.isArray(payload?.actions) ? payload.actions : [];
+      const gridW = Math.max(1, Number(grid.width) || 10);
+      const gridH = Math.max(1, Number(grid.height) || 10);
+      const padding = Math.min(width, height) * 0.08;
+      const cell = Math.min((width - padding * 2) / gridW, (height - padding * 2) / gridH);
+      const fullW = cell * gridW;
+      const fullH = cell * gridH;
+      const originX = (width - fullW) / 2;
+      const originY = (height - fullH) / 2;
+      const toCanvas = (x: number, y: number) => ({
+        cx: originX + (x + 0.5) * cell,
+        cy: originY + (fullH - (y + 0.5) * cell),
+      });
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+
+      if (walls.length > 0) {
+        ctx.fillStyle = "#e5e7eb";
+        walls.forEach((w: any) => {
+          if (typeof w?.x !== "number" || typeof w?.y !== "number") return;
+          const left = originX + w.x * cell;
+          const top = originY + (fullH - (w.y + 1) * cell);
+          ctx.fillRect(left, top, cell, cell);
+        });
+      }
+
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = Math.max(1, cell * 0.05);
+      for (let i = 0; i <= gridW; i += 1) {
+        const x = originX + i * cell;
+        ctx.beginPath();
+        ctx.moveTo(x, originY);
+        ctx.lineTo(x, originY + fullH);
+        ctx.stroke();
+      }
+      for (let j = 0; j <= gridH; j += 1) {
+        const y = originY + j * cell;
+        ctx.beginPath();
+        ctx.moveTo(originX, y);
+        ctx.lineTo(originX + fullW, y);
+        ctx.stroke();
+      }
+
+      let path = rawPath;
+      const startInserted =
+        startState &&
+        typeof startState.x === "number" &&
+        typeof startState.y === "number" &&
+        (rawPath.length === 0 ||
+          rawPath[0]?.x !== startState.x ||
+          rawPath[0]?.y !== startState.y ||
+          rawPath[0]?.dir !== startState.dir);
+      if (startState && typeof startState.x === "number" && typeof startState.y === "number") {
+        const startEntry = { x: startState.x, y: startState.y, dir: startState.dir ?? "top", coins: 0 };
+        if (
+          rawPath.length === 0 ||
+          rawPath[0]?.x !== startEntry.x ||
+          rawPath[0]?.y !== startEntry.y ||
+          rawPath[0]?.dir !== startEntry.dir
+        ) {
+          path = [startEntry, ...rawPath];
+        }
+      }
+
+      const getCoinsForFrame = (index: number) => {
+        if (initialCoins.length === 0) return coinsRemaining;
+        const set = new Map<string, { x: number; y: number }>();
+        initialCoins.forEach((c: any) => {
+          if (typeof c?.x === "number" && typeof c?.y === "number") {
+            set.set(`${c.x},${c.y}`, { x: c.x, y: c.y });
+          }
+        });
+        if (set.size === 0) return coinsRemaining;
+        if (actions.length === 0) return Array.from(set.values());
+        const lastActionIndex = Math.min(actions.length - 1, startInserted ? index - 1 : index);
+        for (let i = 0; i <= lastActionIndex; i += 1) {
+          const act = actions[i];
+          if (!act) continue;
+          const picked = Array.isArray(act.picked) ? act.picked : [];
+          if (picked.length > 0) {
+            picked.forEach((p: any) => {
+              if (typeof p?.x === "number" && typeof p?.y === "number") {
+                set.delete(`${p.x},${p.y}`);
+              }
+            });
+          } else if (act.cmd === "pick_coin" && act.result === true) {
+            const state = path[Math.min(i, path.length - 1)];
+            if (state && typeof state.x === "number" && typeof state.y === "number") {
+              set.delete(`${state.x},${state.y}`);
+            }
+          }
+        }
+        return Array.from(set.values());
+      };
+
+      const coinsToDraw = getCoinsForFrame(frameIndex);
+      if (coinsToDraw.length > 0) {
+        ctx.fillStyle = "#facc15";
+        coinsToDraw.forEach((c: any) => {
+          if (typeof c?.x !== "number" || typeof c?.y !== "number") return;
+          const { cx, cy } = toCanvas(c.x, c.y);
+          ctx.beginPath();
+          ctx.arc(cx, cy, cell * 0.18, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      if (path.length > 1) {
+        ctx.strokeStyle = "rgba(59, 130, 246, 0.35)";
+        ctx.lineWidth = Math.max(1, cell * 0.08);
+        ctx.beginPath();
+        const first = path[0];
+        const start = toCanvas(first.x, first.y);
+        ctx.moveTo(start.cx, start.cy);
+        for (let i = 1; i <= frameIndex && i < path.length; i += 1) {
+          const p = path[i];
+          const pt = toCanvas(p.x, p.y);
+          ctx.lineTo(pt.cx, pt.cy);
+        }
+        ctx.stroke();
+      }
+
+      if (path.length === 0) return;
+      const step = path[Math.min(frameIndex, path.length - 1)];
+      const images = robotImagesRef.current;
+      const img = images?.[step.dir];
+      const size = cell * 0.8;
+      const { cx, cy } = toCanvas(step.x, step.y);
+      if (img && img.complete) {
+        ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+      } else {
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.arc(cx, cy, size * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    if (runCanvasRef.current) {
+      drawPlaceholder(runCanvasRef.current, "Run is disabled for robot problems.");
+    }
+
+    const submitCanvas = submitCanvasRef.current;
+    if (!submitCanvas) return;
+    if (leftTab !== "submit") {
+      stopPlayback();
+      return;
+    }
+
+    const rawPath = Array.isArray(robotResult?.path) ? robotResult.path : [];
+    const startState = robotResult?.start ?? robotConfig?.config?.start;
+    if (!robotResult) {
+      drawPlaceholder(submitCanvas, "Waiting for submission result...");
+      return;
+    }
+    if (rawPath.length === 0 && startState && robotConfig?.config) {
+      drawFrame(submitCanvas, 0, {
+        grid: robotResult?.grid ?? robotConfig.config.grid,
+        start: { ...startState, dir: "right" },
+        walls: robotConfig.config.walls,
+        coins: robotConfig.config.coins,
+        actions: [],
+        path: [{ x: startState.x, y: startState.y, dir: "right", coins: 0 }],
+      });
+      return;
+    }
+    if (rawPath.length === 0) {
+      drawPlaceholder(submitCanvas, "Waiting for submission result...");
+      return;
+    }
+    const needsStart =
+      startState &&
+      typeof startState.x === "number" &&
+      typeof startState.y === "number" &&
+      (rawPath.length === 0 ||
+        rawPath[0]?.x !== startState.x ||
+        rawPath[0]?.y !== startState.y ||
+        rawPath[0]?.dir !== startState.dir);
+    const realPath = rawPath.length + (needsStart ? 1 : 0);
+
+    const clampedFrame = Math.min(frameIndex, realPath - 1);
+    if (clampedFrame !== frameIndex) {
+      setFrameIndex(clampedFrame);
+    } else {
+      drawFrame(submitCanvas, frameIndex, robotResult);
+    }
+
+    if (!isPlaying) {
+      stopPlayback();
+      return;
+    }
+    if (playTimerRef.current !== null) return;
+
+    const frameDuration = 90;
+    playTimerRef.current = window.setInterval(() => {
+      setFrameIndex((prev) => {
+        if (prev >= realPath - 1) {
+          setIsPlaying(false);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, frameDuration);
+    return () => stopPlayback();
+  }, [isRobotProblem, leftTab, robotResult, robotImagesReady, robotConfig, frameIndex, isPlaying]);
 
   
 
@@ -227,6 +562,20 @@ export default function ProblemPage() {
       .then((res) => setProblem(res.data))
       .catch(() => setError("Failed to load problem"))
       .finally(() => setLoading(false));
+  }, [pid]);
+
+  useEffect(() => {
+    if (!Number.isFinite(pid)) return;
+    api
+      .get(`/robot-problems/${pid}`)
+      .then((res) => {
+        setIsRobotProblem(true);
+        setRobotConfig(res.data as RobotProblemOut);
+      })
+      .catch(() => {
+        setIsRobotProblem(false);
+        setRobotConfig(null);
+      });
   }, [pid]);
 
   useEffect(() => {
@@ -252,6 +601,8 @@ export default function ProblemPage() {
     setProblem(null); // ensure stale problem data is cleared before loading the next one
     setCode(DEFAULT_CODE);
     setCodeInitialized(false);
+    setIsRobotProblem(false);
+    setRobotConfig(null);
   }, [pid]);
 
   useEffect(() => {
@@ -381,6 +732,10 @@ export default function ProblemPage() {
   const runCode = useCallback(async () => {
     if (!Number.isFinite(pid)) return;
     setLeftTab("run");
+    if (isRobotProblem) {
+      setRunError("로봇 문제는 실행이 아닌 제출로만 확인 가능합니다.");
+      return;
+    }
     if (!me) {
       setRunError("로그인이 필요합니다. 먼저 로그인하세요.");
       return;
@@ -434,7 +789,7 @@ export default function ProblemPage() {
     } finally {
       setRunningCode(false);
     }
-  }, [pid, me, runInput, code, tryConvertArgsKwargsInput]);
+  }, [pid, me, runInput, code, tryConvertArgsKwargsInput, isRobotProblem]);
 
   // 제출
   const submit = useCallback(async () => {
@@ -718,7 +1073,18 @@ export default function ProblemPage() {
                   </div>
                 </>
               )}
-              {leftTab === "run" && (
+              {leftTab === "run" && isRobotProblem && (
+                <div className="rounded-lg border bg-white p-3 space-y-3">
+                  <canvas ref={runCanvasRef} width={360} height={200} className="w-full rounded-md bg-gray-50" />
+                  <div className="rounded-md border bg-gray-50 p-3 text-xs">
+                    <div className="font-semibold text-gray-700">Raw JSON</div>
+                    <pre className="mt-2 whitespace-pre-wrap break-words font-mono">
+                      {runOutput ? JSON.stringify(runOutput, null, 2) : ""}
+                    </pre>
+                  </div>
+                </div>
+              )}
+              {leftTab === "run" && !isRobotProblem && (
                 <div className="rounded-lg border bg-white p-3">
                   {!runError && !runOutput && (
                     <div className="text-sm text-gray-500">실행 결과가 여기에 표시됩니다.</div>
@@ -755,7 +1121,95 @@ export default function ProblemPage() {
                   )}
                 </div>
               )}
-              {leftTab === "submit" && (
+              {leftTab === "submit" && isRobotProblem && (
+                <div className="rounded-lg border bg-white p-3 space-y-3">
+                  {robotResult && !(robotResult.stderr || "").trim() ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-700 min-h-[30px] py-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!robotResult || totalFrames === 0) return;
+                            if (isPlaying) {
+                              setIsPlaying(false);
+                              return;
+                            }
+                            if (frameIndex >= totalFrames - 1) {
+                              setFrameIndex(0);
+                            }
+                            setIsPlaying(true);
+                          }}
+                          disabled={!robotResult || totalFrames === 0}
+                          className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {isPlaying ? "Pause" : "Play"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsPlaying(false);
+                            setFrameIndex((v) => Math.max(0, v - 1));
+                          }}
+                          disabled={!robotResult || totalFrames === 0}
+                          className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Prev
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsPlaying(false);
+                            setFrameIndex((v) => Math.min(Math.max(totalFrames - 1, 0), v + 1));
+                          }}
+                          disabled={!robotResult || totalFrames === 0}
+                          className="rounded border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={0}
+                            max={Math.max(totalFrames - 1, 0)}
+                            value={Math.min(frameIndex, Math.max(totalFrames - 1, 0))}
+                            onChange={(e) => {
+                              setIsPlaying(false);
+                              setFrameIndex(Number(e.target.value));
+                            }}
+                            disabled={!robotResult || totalFrames === 0}
+                            className="w-40"
+                          />
+                          <span className="font-mono text-[11px] text-gray-500">
+                            {totalFrames === 0 ? "0/0" : `${Math.min(frameIndex + 1, totalFrames)}/${totalFrames}`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right font-mono text-[13px] text-gray-600">
+                        <div>{`coin: ${currentCoins}`}</div>
+                        <div>{currentAction ? `action: ${currentAction}` : 'action: '}</div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {robotResult && (robotResult.stderr || "").length > 0 ? null : (
+                    <canvas ref={submitCanvasRef} width={360} height={200} className="w-full rounded-md bg-gray-50" />
+                  )}
+                  <div className="rounded-md border bg-gray-50 p-3 text-xs">
+                    <div className="font-semibold text-gray-700">Stdout</div>
+                    <pre className="mt-2 whitespace-pre-wrap break-words font-mono">
+                      {robotResult?.stdout ?? ""}
+                    </pre>
+                  </div>
+                  {robotResult && (robotResult.stderr || "").length > 0 && (
+                    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs">
+                      <div className="font-semibold text-red-700">Stderr</div>
+                      <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-red-700">
+                        {robotResult?.stderr ?? ""}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+              {leftTab === "submit" && !isRobotProblem && (
                 <div className="rounded-lg border bg-white">
                   <div className="border-b px-4 py-2.5 text-sm font-semibold">Results</div>
                   {!results && (
@@ -869,10 +1323,18 @@ export default function ProblemPage() {
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <button
                       onClick={runCode}
-                      disabled={runningCode || !canSubmit}
+                      disabled={runningCode || !canSubmit || isRobotProblem}
                       className="inline-flex items-center rounded-md bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
                     >
-                      {!me ? "로그인 후 실행" : !me.is_verified ? "이메일 인증 후 실행" : runningCode ? "실행 중…" : "실행"}
+                      {!me
+                        ? "로그인 후 실행"
+                        : !me.is_verified
+                        ? "이메일 인증 후 실행"
+                        : isRobotProblem
+                        ? "로봇 문제는 제출로 확인"
+                        : runningCode
+                        ? "실행 중…"
+                        : "실행"}
                     </button>
                     <button
                       onClick={submit}

@@ -49,11 +49,31 @@ export type SubmissionResult = {
   input_text?: string;
   expected_text?: string;
   return_value?: any;
+  robot_result?: any;
 };
 
 export type SubmissionResultsResponse = {
   results: SubmissionResult[];
   total_testcases: number;
+};
+
+export type RobotProblemConfig = {
+  grid: { width: number; height: number };
+  start: { x: number; y: number; dir: "top" | "bottom" | "left" | "right" };
+  walls: { x: number; y: number }[];
+  coins: { x: number; y: number }[];
+  goal: Record<string, any>;
+};
+
+export type RobotProblemOut = {
+  problem_id: number;
+  robot_pid: number;
+  slug: string;
+  title: string;
+  difficulty: "easy" | "medium" | "hard";
+  statement_md: string;
+  starter_code?: string | null;
+  config: RobotProblemConfig;
 };
 
 export type TeacherClass = {

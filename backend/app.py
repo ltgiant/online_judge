@@ -31,7 +31,7 @@ from backend.auth import (
     consume_verify_token,
 )
 from backend.emailer import send_verify_email, SMTPConfigError, is_smtp_configured
-from backend.schemas import SubmissionCreate, ProblemCreate  # import early for type usage
+from backend.schemas import SubmissionCreate, ProblemCreate, RobotProblemCreate, RobotProblemOut, RobotProblemCreateWithWeek  # import early for type usage
 
 logger = logging.getLogger(__name__)
 
@@ -526,6 +526,28 @@ def get_problem(pid: int, me: MeOut | None = Depends(get_optional_user)):
             starter_code=r[5],
         )
 
+@app.get("/robot-problems/{problem_id}", response_model=RobotProblemOut)
+def get_robot_problem(problem_id: int, me: MeOut | None = Depends(get_optional_user)):
+    detail = logic.get_robot_problem(problem_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Robot problem not found")
+
+    class_ids = logic.problem_class_ids(problem_id)
+    if class_ids:
+        if not me:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        allowed = False
+        if me.role == "admin":
+            allowed = True
+        elif me.role == "teacher" and logic.teacher_has_problem_access(me.id, problem_id):
+            allowed = True
+        elif me.role == "student" and logic.student_has_problem_access(me.id, problem_id):
+            allowed = True
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    return RobotProblemOut(**detail)
+
 # ---------- 관리자/교사 기능 ----------
 @app.get("/admin/problems", response_model=List[Problem])
 def admin_list_public_problems(me: MeOut = Depends(get_current_user)):
@@ -538,6 +560,15 @@ def admin_create_problem(data: ProblemCreate, me: MeOut = Depends(get_current_us
     ensure_role(me, {"admin"})
     pid = logic.create_problem(data, author_id=me.id)
     return {"problem_id": pid}
+
+@app.post("/admin/robot-problems", response_model=RobotProblemOut)
+def admin_create_robot_problem(data: RobotProblemCreate, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"admin"})
+    created = logic.create_robot_problem(data, author_id=me.id)
+    detail = logic.get_robot_problem(created["problem_id"])
+    if not detail:
+        raise HTTPException(status_code=500, detail="Robot problem create failed")
+    return RobotProblemOut(**detail)
 
 @app.delete("/admin/problems/{pid}")
 def admin_delete_problem(pid: int, me: MeOut = Depends(get_current_user)):
@@ -767,6 +798,24 @@ def teacher_add_problem_to_class(class_id: int, payload: ClassProblemAssignIn, m
 
     logic.add_problem_to_class(class_id, problem_id, me.id, payload.week)
     return {"detail": "problem_assigned", "problem_id": problem_id}
+
+@app.post("/teacher/classes/{class_id}/robot-problems")
+def teacher_add_robot_problem_to_class(
+    class_id: int,
+    payload: RobotProblemCreateWithWeek,
+    me: MeOut = Depends(get_current_user),
+):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    created = logic.create_robot_problem(payload, author_id=me.id)
+    problem_id = created["problem_id"]
+    logic.add_problem_to_class(class_id, problem_id, me.id, payload.week)
+    return {"detail": "robot_problem_assigned", "problem_id": problem_id, "robot_pid": created["robot_pid"]}
 
 @app.delete("/teacher/classes/{class_id}/problems/{problem_id}")
 def teacher_remove_problem_from_class(class_id: int, problem_id: int, me: MeOut = Depends(get_current_user)):
@@ -1101,15 +1150,40 @@ def _parse_stdout_field(raw: str) -> tuple[Any | None, str]:
         pass
     return None, raw
 
+def _try_parse_robot_stdout(raw: str) -> dict | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        data = None
+    if data is None:
+        brace = raw.find("{")
+        if brace != -1:
+            try:
+                data = json.loads(raw[brace:])
+            except json.JSONDecodeError:
+                data = None
+    if not isinstance(data, dict):
+        return None
+    if "is_valid" in data and "actions" in data and "path" in data:
+        return data
+    return None
+
 @app.get("/submissions/{sid}/results")
 def api_get_submission_results(sid: int, me: MeOut = Depends(get_current_user)):
     with DB() as cur:
         # 권한 체크
-        cur.execute("SELECT user_id, problem_id FROM submissions WHERE id=%s", (sid,))
+        cur.execute("""
+            SELECT s.user_id, s.problem_id, p.problem_type
+            FROM submissions s
+            JOIN problems p ON p.id = s.problem_id
+            WHERE s.id=%s
+        """, (sid,))
         rr = cur.fetchone()
         if not rr:
             raise HTTPException(status_code=404, detail="Submission not found")
-        owner_id, problem_id = rr
+        owner_id, problem_id, problem_type = rr
         if not can_access_student(me, owner_id):
             raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -1127,6 +1201,11 @@ def api_get_submission_results(sid: int, me: MeOut = Depends(get_current_user)):
         results = []
         for x in rows:
             ret_val, stdout_print = _parse_stdout_field(x[4])
+            robot_result = None
+            if problem_type == "robot":
+                robot_result = _try_parse_robot_stdout(x[4])
+                if robot_result:
+                    stdout_print = robot_result.get("stdout", "") or ""
             results.append({
                 "result_id": x[0],
                 "idx": x[1],
@@ -1137,5 +1216,6 @@ def api_get_submission_results(sid: int, me: MeOut = Depends(get_current_user)):
                 "input_text": x[6],
                 "expected_text": x[7],
                 "return_value": ret_val,
+                "robot_result": robot_result,
             })
         return {"results": results, "total_testcases": total_testcases}
