@@ -32,6 +32,15 @@ export default function TeacherClassDetailPage() {
     statement_md: "",
     starter_code: DEFAULT_STARTER,
   });
+  const [robotConfig, setRobotConfig] = useState<string>(
+`{
+  "grid": { "width": 10, "height": 10 },
+  "start": { "x": 1, "y": 1, "dir": "top" },
+  "walls": [],
+  "coins": [],
+  "goal": { "final": { "x": 1, "y": 1, "dir": "top" } }
+}`
+  );
   const [csvProblemId, setCsvProblemId] = useState("");
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [replaceExisting, setReplaceExisting] = useState(true);
@@ -202,6 +211,55 @@ export default function TeacherClassDetailPage() {
       await fetchClassProblems();
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? "Failed to create problem");
+    }
+  };
+
+  const handleCreateRobotProblemForClass = async () => {
+    if (!Number.isInteger(classId)) return;
+    const { slug, title, difficulty, statement_md, starter_code } = newProblem;
+    if (!slug.trim() || !title.trim() || !statement_md.trim() || !newProblemWeek.trim()) {
+      setError("Slug, title, statement, and week are required");
+      return;
+    }
+    const weekValue = Number(newProblemWeek);
+    if (!weekOptions.includes(weekValue)) {
+      setError("Select a week from the existing week list.");
+      return;
+    }
+    let config: any = null;
+    try {
+      config = JSON.parse(robotConfig);
+    } catch {
+      setError("Robot config must be valid JSON");
+      return;
+    }
+    try {
+      const { data } = await api.post(`/teacher/classes/${classId}/robot-problems`, {
+        week: weekValue,
+        slug: slug.trim(),
+        title: title.trim(),
+        difficulty,
+        statement_md: statement_md.trim(),
+        starter_code: starter_code?.trim() || undefined,
+        config,
+      });
+      setStatus("Robot problem created & assigned to class");
+      setNewProblem({
+        slug: "",
+        title: "",
+        difficulty: "easy",
+        statement_md: "# Problem statement\n\nDescribe the problem here.",
+        starter_code: DEFAULT_STARTER,
+      });
+      setRobotConfig(`{\n  \"grid\": { \"width\": 10, \"height\": 10 },\n  \"start\": { \"x\": 1, \"y\": 1, \"dir\": \"top\" },\n  \"walls\": [],\n  \"coins\": [],\n  \"goal\": { \"final\": { \"x\": 1, \"y\": 1, \"dir\": \"top\" } }\n}`);
+      setNewProblemWeek("");
+      setNewProblemCsv(null);
+      setShowCreateForm(false);
+      setError(null);
+      setStatus(data?.detail ?? "Robot problem created & assigned to class");
+      await fetchClassProblems();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? "Failed to create robot problem");
     }
   };
 
@@ -713,12 +771,27 @@ export default function TeacherClassDetailPage() {
                   CSV headers: idx,input_text,expected_text,(optional) timeout_ms,points,is_public.
                 </p>
               </div>
-              <button
-                onClick={handleCreateProblemForClass}
-                className="w-full rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
-              >
-                생성 및 배정
-              </button>
+              <label className="text-xs font-semibold text-gray-700">Robot config (JSON)</label>
+              <textarea
+                className="w-full rounded border p-2 font-mono"
+                rows={8}
+                value={robotConfig}
+                onChange={(e) => setRobotConfig(e.target.value)}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleCreateProblemForClass}
+                  className="rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  생성 및 배정
+                </button>
+                <button
+                  onClick={handleCreateRobotProblemForClass}
+                  className="rounded bg-slate-800 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  로봇 문제 생성
+                </button>
+              </div>
             </div>
           )}
           {manageVisible && (

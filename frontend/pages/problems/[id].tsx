@@ -72,7 +72,6 @@ export default function ProblemPage() {
   const codeRef = useRef<string>(DEFAULT_CODE);
   const lastSavedCodeRef = useRef<string | null>(null);
   const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const draftLoadStateRef = useRef<"idle" | "loading" | "done">("idle");
   const editorRef = useRef<any>(null);
   const [subId, setSubId] = useState<number | null>(null);
   const [status, setStatus] = useState<SubmissionSummary["status"] | null>(null);
@@ -106,8 +105,6 @@ export default function ProblemPage() {
   // 로그인/검증 상태
   const { me, loading: loadingMe } = useMe();
   const canSubmit = !!me && me.is_verified;
-  //const userIdPart = me?.id ? `user_${me.id}` : "guest";
-  //const runInputStorageKey = Number.isFinite(pid) ? `oj_run_input_${pid}_${userIdPart}` : null;
   const classIdParam = router.query.classId;
   const weekParam = router.query.week;
   const classId = Number(Array.isArray(classIdParam) ? classIdParam[0] : classIdParam);
@@ -265,7 +262,6 @@ export default function ProblemPage() {
     setCode(DEFAULT_CODE);
     setCodeInitialized(false);
     lastSavedCodeRef.current = null;
-    draftLoadStateRef.current = "idle";
     if (draftDebounceRef.current) {
       clearTimeout(draftDebounceRef.current);
       draftDebounceRef.current = null;
@@ -277,19 +273,16 @@ export default function ProblemPage() {
     let active = true;
     const setInitialCode = (nextCode: string) => {
       setCode(nextCode);
+      codeRef.current = nextCode;
       setEditorValue(nextCode);
       lastSavedCodeRef.current = nextCode;
       setCodeInitialized(true);
     };
     const loadDraft = async () => {
       if (!me) {
-        if (!codeInitialized) {
-          setInitialCode(problem.starter_code ?? DEFAULT_CODE);
-        }
+        setInitialCode(problem.starter_code ?? DEFAULT_CODE);
         return;
       }
-      if (draftLoadStateRef.current !== "idle") return;
-      draftLoadStateRef.current = "loading";
       let draftCode: string | null = null;
       try {
         const res = await api.get<{ code: string | null }>(`/problems/${pid}/draft`);
@@ -299,13 +292,12 @@ export default function ProblemPage() {
       }
       if (!active) return;
       setInitialCode(draftCode ?? problem.starter_code ?? DEFAULT_CODE);
-      draftLoadStateRef.current = "done";
     };
     loadDraft();
     return () => {
       active = false;
     };
-  }, [problem, codeInitialized, loadingMe, me, pid, setEditorValue]);
+  }, [problem, loadingMe, me, pid, setEditorValue]);
 
   const saveDraft = useCallback(
     async (nextCode: string) => {
@@ -348,9 +340,10 @@ export default function ProblemPage() {
   }, [code]);
 
   useEffect(() => {
-    if (!codeInitialized || !editorRef.current) return;
-    editorRef.current.setValue(codeRef.current);
-  }, [codeInitialized]);
+    if (!editorRef.current) return;
+    if (editorRef.current.getValue() === code) return;
+    editorRef.current.setValue(code);
+  }, [code]);
 
   useEffect(() => {
     return () => {
@@ -967,7 +960,7 @@ export default function ProblemPage() {
                       onMount={(editor) => {
                         editorRef.current = editor;
                         if (codeInitialized) {
-                          editor.setValue(code);
+                          editor.setValue(codeRef.current);
                         }
                       }}
                       options={{ minimap: { enabled: false }, fontSize: 14, tabSize: 2 }}

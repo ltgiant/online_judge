@@ -1,3 +1,4 @@
+import json
 import secrets
 import string
 from .db import DB
@@ -26,13 +27,86 @@ def get_problem(pid: int):
             "statement_md": row[4], "starter_code": row[5], "public_samples": pub_tcs
         }
 
-def create_problem(data, author_id=None):
+def create_problem(data, author_id=None, problem_type: str = "standard"):
     with DB() as cur:
         cur.execute("""
-          INSERT INTO problems(slug, title, difficulty, statement_md, starter_code, created_by)
-          VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
-        """, (data.slug, data.title, data.difficulty, data.statement_md, getattr(data, "starter_code", None), author_id))
+          INSERT INTO problems(slug, title, difficulty, statement_md, starter_code, created_by, problem_type)
+          VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id
+        """, (data.slug, data.title, data.difficulty, data.statement_md, getattr(data, "starter_code", None), author_id, problem_type))
         return cur.fetchone()[0]
+
+def create_robot_problem(data, author_id=None):
+    """Create a problem + robot config + placeholder testcase as a single transaction."""
+    with DB() as cur:
+        cur.execute("""
+          INSERT INTO problems(slug, title, difficulty, statement_md, starter_code, created_by, problem_type)
+          VALUES (%s,%s,%s,%s,%s,%s,'robot') RETURNING id
+        """, (data.slug, data.title, data.difficulty, data.statement_md, getattr(data, "starter_code", None), author_id))
+        problem_id = cur.fetchone()[0]
+
+        cfg = data.config
+        config_payload = cfg.model_dump()
+        cur.execute(
+            """
+            INSERT INTO robot_problems(problem_id, grid, start, walls, coins, goal, config)
+            VALUES (%s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb)
+            RETURNING pid
+            """,
+            (
+                problem_id,
+                json.dumps(cfg.grid),
+                json.dumps(cfg.start),
+                json.dumps(cfg.walls),
+                json.dumps(cfg.coins),
+                json.dumps(cfg.goal),
+                json.dumps(config_payload),
+            ),
+        )
+        robot_pid = cur.fetchone()[0]
+
+        # Placeholder testcase so robot problems still align with existing submissions flow.
+        cur.execute(
+            """
+            INSERT INTO testcases(problem_id, idx, input_text, expected_text, timeout_ms, points, is_public)
+            VALUES (%s, 1, %s, %s, %s, %s, %s)
+            """,
+            (problem_id, "{}", "{}", 2000, 1, False),
+        )
+
+        return {"problem_id": problem_id, "robot_pid": robot_pid}
+
+def get_robot_problem(problem_id: int):
+    with DB() as cur:
+        cur.execute(
+            """
+            SELECT p.id, p.slug, p.title, p.difficulty, p.statement_md, p.starter_code,
+                   r.pid, r.grid, r.start, r.walls, r.coins, r.goal, r.config
+            FROM problems p
+            JOIN robot_problems r ON r.problem_id = p.id
+            WHERE p.id=%s
+            """,
+            (problem_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        config = row[12] or {
+            "grid": row[7],
+            "start": row[8],
+            "walls": row[9],
+            "coins": row[10],
+            "goal": row[11],
+        }
+        return {
+            "problem_id": row[0],
+            "slug": row[1],
+            "title": row[2],
+            "difficulty": row[3],
+            "statement_md": row[4],
+            "starter_code": row[5],
+            "robot_pid": row[6],
+            "config": config,
+        }
 
 def add_testcase(data):
     with DB() as cur:

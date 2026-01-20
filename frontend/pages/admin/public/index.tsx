@@ -19,6 +19,25 @@ export default function AdminPublicProblemsPage() {
     # TODO: implement
     return None
 `);
+  const [robotSlug, setRobotSlug] = useState("");
+  const [robotTitle, setRobotTitle] = useState("");
+  const [robotDifficulty, setRobotDifficulty] = useState<Problem["difficulty"]>("easy");
+  const [robotStatement, setRobotStatement] = useState("");
+  const [robotStarter, setRobotStarter] = useState<string>(
+`# hubo API: move, turn_left, turn_right, is_wall, is_coin, pick_coin, position, direction
+
+# TODO: implement robot logic
+`
+  );
+  const [robotConfig, setRobotConfig] = useState<string>(
+`{
+  "grid": { "width": 10, "height": 10 },
+  "start": { "x": 1, "y": 1, "dir": "top" },
+  "walls": [],
+  "coins": [],
+  "goal": { "final": { "x": 1, "y": 1, "dir": "top" } }
+}`
+  );
 
   useEffect(() => {
     if (!loading && me?.role === "admin") {
@@ -58,6 +77,41 @@ export default function AdminPublicProblemsPage() {
       await fetchProblems();
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? "Failed to create problem");
+    }
+  };
+
+  const createRobotProblem = async () => {
+    if (!robotSlug.trim() || !robotTitle.trim() || !robotStatement.trim()) {
+      setError("Robot slug, title, and statement are required");
+      return;
+    }
+    let config: any = null;
+    try {
+      config = JSON.parse(robotConfig);
+    } catch {
+      setError("Robot config must be valid JSON");
+      return;
+    }
+    const payload = {
+      slug: robotSlug.trim(),
+      title: robotTitle.trim(),
+      difficulty: robotDifficulty,
+      statement_md: robotStatement,
+      starter_code: robotStarter.trim() || undefined,
+      config,
+    };
+    try {
+      await api.post("/admin/robot-problems", payload);
+      setStatus("Robot problem created");
+      setRobotSlug("");
+      setRobotTitle("");
+      setRobotStatement("");
+      setRobotStarter(`# hubo API: move, turn_left, turn_right, is_wall, is_coin, pick_coin, position, direction\n\n# TODO: implement robot logic\n`);
+      setRobotConfig(`{\n  \"grid\": { \"width\": 10, \"height\": 10 },\n  \"start\": { \"x\": 1, \"y\": 1, \"dir\": \"top\" },\n  \"walls\": [],\n  \"coins\": [],\n  \"goal\": { \"final\": { \"x\": 1, \"y\": 1, \"dir\": \"top\" } }\n}`);
+      setError(null);
+      await fetchProblems();
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? "Failed to create robot problem");
     }
   };
 
@@ -135,6 +189,58 @@ export default function AdminPublicProblemsPage() {
           className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
         >
           생성
+        </button>
+      </section>
+
+      <section className="rounded border bg-white p-4 shadow-sm space-y-3">
+        <h2 className="text-lg font-semibold">Create Robot Problem</h2>
+        <input
+          className="w-full rounded border p-2 text-sm"
+          placeholder="Slug"
+          value={robotSlug}
+          onChange={(e) => setRobotSlug(e.target.value)}
+        />
+        <input
+          className="w-full rounded border p-2 text-sm"
+          placeholder="Title"
+          value={robotTitle}
+          onChange={(e) => setRobotTitle(e.target.value)}
+        />
+        <select
+          className="w-full rounded border p-2 text-sm"
+          value={robotDifficulty}
+          onChange={(e) => setRobotDifficulty(e.target.value as Problem["difficulty"])}
+        >
+          <option value="easy">Easy</option>
+          <option value="medium">Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+        <textarea
+          className="w-full rounded border p-2 text-sm"
+          rows={6}
+          placeholder="Statement (Markdown)"
+          value={robotStatement}
+          onChange={(e) => setRobotStatement(e.target.value)}
+        />
+        <label className="text-sm font-medium text-gray-700">Starter Code (optional)</label>
+        <textarea
+          className="w-full rounded border p-2 text-sm font-mono"
+          rows={6}
+          value={robotStarter}
+          onChange={(e) => setRobotStarter(e.target.value)}
+        />
+        <label className="text-sm font-medium text-gray-700">Robot Config (JSON)</label>
+        <textarea
+          className="w-full rounded border p-2 text-sm font-mono"
+          rows={10}
+          value={robotConfig}
+          onChange={(e) => setRobotConfig(e.target.value)}
+        />
+        <button
+          onClick={createRobotProblem}
+          className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+        >
+          로봇 문제 생성
         </button>
       </section>
 
