@@ -72,6 +72,7 @@ export default function ProblemPage() {
   const codeRef = useRef<string>(DEFAULT_CODE);
   const lastSavedCodeRef = useRef<string | null>(null);
   const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftLoadStateRef = useRef<"idle" | "loading" | "done">("idle");
   const editorRef = useRef<any>(null);
   const [subId, setSubId] = useState<number | null>(null);
   const [status, setStatus] = useState<SubmissionSummary["status"] | null>(null);
@@ -264,6 +265,7 @@ export default function ProblemPage() {
     setCode(DEFAULT_CODE);
     setCodeInitialized(false);
     lastSavedCodeRef.current = null;
+    draftLoadStateRef.current = "idle";
     if (draftDebounceRef.current) {
       clearTimeout(draftDebounceRef.current);
       draftDebounceRef.current = null;
@@ -271,24 +273,33 @@ export default function ProblemPage() {
   }, [pid]);
 
   useEffect(() => {
-    if (!problem || codeInitialized || loadingMe) return;
+    if (!problem || loadingMe) return;
     let active = true;
-    const loadDraft = async () => {
-      let draftCode: string | null = null;
-      if (me) {
-        try {
-          const res = await api.get<{ code: string | null }>(`/problems/${pid}/draft`);
-          draftCode = res.data?.code ?? null;
-        } catch {
-          draftCode = null;
-        }
-      }
-      if (!active) return;
-      const nextCode = draftCode ?? problem.starter_code ?? DEFAULT_CODE;
+    const setInitialCode = (nextCode: string) => {
       setCode(nextCode);
       setEditorValue(nextCode);
       lastSavedCodeRef.current = nextCode;
       setCodeInitialized(true);
+    };
+    const loadDraft = async () => {
+      if (!me) {
+        if (!codeInitialized) {
+          setInitialCode(problem.starter_code ?? DEFAULT_CODE);
+        }
+        return;
+      }
+      if (draftLoadStateRef.current !== "idle") return;
+      draftLoadStateRef.current = "loading";
+      let draftCode: string | null = null;
+      try {
+        const res = await api.get<{ code: string | null }>(`/problems/${pid}/draft`);
+        draftCode = res.data?.code ?? null;
+      } catch {
+        draftCode = null;
+      }
+      if (!active) return;
+      setInitialCode(draftCode ?? problem.starter_code ?? DEFAULT_CODE);
+      draftLoadStateRef.current = "done";
     };
     loadDraft();
     return () => {
