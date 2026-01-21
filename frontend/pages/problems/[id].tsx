@@ -334,10 +334,12 @@ export default function ProblemPage() {
         : Array.isArray(config?.walls)
         ? config?.walls
         : [];
-      const initialCoins = Array.isArray(payload?.coins)
-        ? payload.coins
+      const initialCoins = Array.isArray(payload?.coins_initial)
+        ? payload.coins_initial
         : Array.isArray(config?.coins)
         ? config?.coins
+        : Array.isArray(payload?.coins)
+        ? payload.coins
         : [];
       const coinsRemaining = Array.isArray(payload?.coins_remaining) ? payload.coins_remaining : [];
       const startState = config?.start ?? payload?.start;

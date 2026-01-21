@@ -75,6 +75,27 @@ def create_user_with_verify(email: str, username: str, pw_plain: str, *, ttl_min
         uid = cur.fetchone()[0]
     return uid, token, expires
 
+def refresh_unverified_user(email: str, username: str, pw_plain: str, *, ttl_minutes=30):
+    token = secrets.token_urlsafe(32)
+    expires = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
+    with DB() as cur:
+        cur.execute("""
+            UPDATE users
+            SET
+                pwd_hash=%s,
+                username=%s,
+                is_verified=false,
+                verify_token=%s,
+                verify_expires=%s
+            WHERE email=%s AND is_verified=false
+            RETURNING id
+        """, (hash_password(pw_plain), username, token, expires, email))
+        row = cur.fetchone()
+        if not row:
+            return None, None, None
+        uid = row[0]
+    return uid, token, expires
+
 def consume_verify_token(token: str) -> bool:
     now = datetime.now(timezone.utc)
     with DB() as cur:

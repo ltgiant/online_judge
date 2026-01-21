@@ -32,3 +32,6 @@ WORKFLOW.md
 env/.env.dev
 env/.env.prod
 !env/env.example
+
+# docs
+docs/
