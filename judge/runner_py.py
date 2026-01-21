@@ -347,6 +347,8 @@ def main():
         [{"x": x, "y": y} for (x, y) in coins],
         max_steps,
     )
+    initial_walls = [{"x": x, "y": y} for (x, y) in sorted(robot.walls)]
+    initial_coins = [{"x": x, "y": y} for (x, y) in sorted(robot.coins)]
     is_valid = True
 
     out_buf = io.StringIO()
@@ -372,8 +374,9 @@ def main():
         "final": final_state,
         "actions": robot.actions,
         "path": robot.path,
-        "walls": [{"x": x, "y": y} for (x, y) in sorted(robot.walls)],
+        "walls": initial_walls,
         "coins": [{"x": x, "y": y} for (x, y) in sorted(robot.coins)],
+        "coins_initial": initial_coins,
         "coins_remaining": coins_remaining,
         "stdout": out_buf.getvalue(),
         "stderr": err_buf.getvalue(),

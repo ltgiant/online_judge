@@ -28,6 +28,7 @@ from backend.auth import (
     get_user_by_id,
     verify_password,
     create_user_with_verify,
+    refresh_unverified_user,
     consume_verify_token,
 )
 from backend.emailer import send_verify_email, SMTPConfigError, is_smtp_configured
@@ -314,9 +315,15 @@ def build_verify_url(token: str) -> str:
 
 @app.post("/auth/register")
 def api_register(inp: RegisterIn):
-    if get_user_by_email(inp.email):
-        raise HTTPException(status_code=409, detail="Email already registered")
-    uid, token, exp = create_user_with_verify(inp.email, inp.username, inp.password)
+    row = get_user_by_email(inp.email)
+    if row:
+        if row[5]:
+            raise HTTPException(status_code=409, detail="Email already registered")
+        uid, token, exp = refresh_unverified_user(inp.email, inp.username, inp.password)
+        if not uid:
+            raise HTTPException(status_code=409, detail="Email already registered")
+    else:
+        uid, token, exp = create_user_with_verify(inp.email, inp.username, inp.password)
     verify_url = build_verify_url(token)
 
     smtp_configured = is_smtp_configured()
