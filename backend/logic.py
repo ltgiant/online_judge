@@ -123,6 +123,29 @@ def create_submission(user_id: int, data):
           VALUES (%s,%s,'python',%s) RETURNING id
         """, (user_id, data.problem_id, data.source_code))
         return cur.fetchone()[0]
+    
+def problem_exists(problem_id: int) -> bool:
+    with DB() as cur:
+        cur.execute("SELECT 1 FROM problems WHERE id=%s", (problem_id,))
+        return cur.fetchone() is not None
+
+def get_user_problem_draft(user_id: int, problem_id: int) -> str | None:
+    with DB() as cur:
+        cur.execute(
+            "SELECT code FROM user_problem_drafts WHERE user_id=%s AND problem_id=%s",
+            (user_id, problem_id),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+def upsert_user_problem_draft(user_id: int, problem_id: int, code: str) -> None:
+    with DB() as cur:
+        cur.execute("""
+            INSERT INTO user_problem_drafts(user_id, problem_id, code)
+            VALUES (%s,%s,%s)
+            ON CONFLICT (user_id, problem_id)
+            DO UPDATE SET code = EXCLUDED.code, updated_at = NOW()
+        """, (user_id, problem_id, code))
 
 def get_submission(sid: int):
     with DB() as cur:

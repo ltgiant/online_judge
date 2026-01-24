@@ -29,7 +29,9 @@ class RobotProblemConfig(BaseModel):
     walls: list[dict] = Field(default_factory=list)
     coins: list[dict] = Field(default_factory=list)
     goal: dict
-
+    
+class DraftUpsert(BaseModel):
+    code: str
 
 class RobotProblemCreate(BaseModel):
     slug: str
