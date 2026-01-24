@@ -47,6 +47,7 @@ const DEFAULT_CODE = `def answer(n: int, nums: list[int], target: int) -> tuple[
     # TODO: implement
     return (0, 0)
 `;
+const DRAFT_DEBOUNCE_MS = 1000;
 
 type StudentClassProblem = Pick<
   ClassProblem,
@@ -69,6 +70,10 @@ export default function ProblemPage() {
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
   const [code, setCode] = useState<string>(DEFAULT_CODE);
   const [codeInitialized, setCodeInitialized] = useState(false);
+  const codeRef = useRef<string>(DEFAULT_CODE);
+  const lastSavedCodeRef = useRef<string | null>(null);
+  const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editorRef = useRef<any>(null);
   const [subId, setSubId] = useState<number | null>(null);
   const [status, setStatus] = useState<SubmissionSummary["status"] | null>(null);
   const [results, setResults] = useState<SubmissionResult[] | null>(null);
@@ -103,8 +108,6 @@ export default function ProblemPage() {
   // 로그인/검증 상태
   const { me, loading: loadingMe } = useMe();
   const canSubmit = !!me && me.is_verified;
-  //const userIdPart = me?.id ? `user_${me.id}` : "guest";
-  //const runInputStorageKey = Number.isFinite(pid) ? `oj_run_input_${pid}_${userIdPart}` : null;
   const classIdParam = router.query.classId;
   const weekParam = router.query.week;
   const classId = Number(Array.isArray(classIdParam) ? classIdParam[0] : classIdParam);
@@ -112,6 +115,12 @@ export default function ProblemPage() {
   const weekValue = weekValueRaw === "unscheduled" ? null : Number(weekValueRaw);
   const hasWeekContext =
     (weekValueRaw === "unscheduled" || Number.isInteger(weekValue)) && Number.isInteger(classId);
+
+  const setEditorValue = useCallback((nextCode: string) => {
+    if (editorRef.current) {
+      editorRef.current.setValue(nextCode);
+    }
+  }, []);
 
   const tryConvertArgsKwargsInput = useCallback((text: string) => {
     const lines = text
@@ -603,16 +612,98 @@ export default function ProblemPage() {
     setProblem(null); // ensure stale problem data is cleared before loading the next one
     setCode(DEFAULT_CODE);
     setCodeInitialized(false);
-    setIsRobotProblem(false);
-    setRobotConfig(null);
+    lastSavedCodeRef.current = null;
+    if (draftDebounceRef.current) {
+      clearTimeout(draftDebounceRef.current);
+      draftDebounceRef.current = null;
+    }
   }, [pid]);
 
   useEffect(() => {
-    if (!problem || codeInitialized || loadingMe) return;
-    // no saved code available; fall back to starter
-    setCode(problem.starter_code || DEFAULT_CODE);
-    setCodeInitialized(true);
-  }, [problem, codeInitialized, loadingMe]);
+    if (!problem || loadingMe) return;
+    let active = true;
+    const setInitialCode = (nextCode: string) => {
+      setCode(nextCode);
+      codeRef.current = nextCode;
+      setEditorValue(nextCode);
+      lastSavedCodeRef.current = nextCode;
+      setCodeInitialized(true);
+    };
+    const loadDraft = async () => {
+      if (!me) {
+        setInitialCode(problem.starter_code ?? DEFAULT_CODE);
+        return;
+      }
+      let draftCode: string | null = null;
+      try {
+        const res = await api.get<{ code: string | null }>(`/problems/${pid}/draft`);
+        draftCode = res.data?.code ?? null;
+      } catch {
+        draftCode = null;
+      }
+      if (!active) return;
+      setInitialCode(draftCode ?? problem.starter_code ?? DEFAULT_CODE);
+    };
+    loadDraft();
+    return () => {
+      active = false;
+    };
+  }, [problem, loadingMe, me, pid, setEditorValue]);
+
+  const saveDraft = useCallback(
+    async (nextCode: string) => {
+      if (!me || !Number.isFinite(pid)) return;
+      try {
+        await api.put(`/problems/${pid}/draft`, { code: nextCode });
+        lastSavedCodeRef.current = nextCode;
+      } catch {
+        // ignore autosave errors
+      }
+    },
+    [me, pid]
+  );
+
+  useEffect(() => {
+    if (!me || !Number.isFinite(pid) || !codeInitialized) return;
+    if (lastSavedCodeRef.current === null) {
+      lastSavedCodeRef.current = code;
+      return;
+    }
+    if (code === lastSavedCodeRef.current) return;
+
+    if (draftDebounceRef.current) {
+      clearTimeout(draftDebounceRef.current);
+    }
+    draftDebounceRef.current = setTimeout(() => {
+      saveDraft(code);
+    }, DRAFT_DEBOUNCE_MS);
+
+    return () => {
+      if (draftDebounceRef.current) {
+        clearTimeout(draftDebounceRef.current);
+        draftDebounceRef.current = null;
+      }
+    };
+  }, [code, codeInitialized, me, pid, saveDraft]);
+
+  useEffect(() => {
+    codeRef.current = code;
+  }, [code]);
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    if (editorRef.current.getValue() === code) return;
+    editorRef.current.setValue(code);
+  }, [code]);
+
+  useEffect(() => {
+    return () => {
+      if (draftDebounceRef.current) {
+        clearTimeout(draftDebounceRef.current);
+        draftDebounceRef.current = null;
+      }
+    };
+  }, []);
 
   // 문제 변경시 Submission, Status, Result 초기화 및 문제 탭으로 고정
   useEffect(() => {
@@ -1319,6 +1410,12 @@ export default function ProblemPage() {
                       defaultLanguage="python"
                       value={code}
                       onChange={(v) => setCode(v ?? "")}
+                      onMount={(editor) => {
+                        editorRef.current = editor;
+                        if (codeInitialized) {
+                          editor.setValue(codeRef.current);
+                        }
+                      }}
                       options={{ minimap: { enabled: false }, fontSize: 14, tabSize: 2 }}
                     />
                   </div>

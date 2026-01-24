@@ -100,6 +100,14 @@ CREATE TABLE IF NOT EXISTS submissions (
   finished_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS user_problem_drafts (
+  user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  problem_id BIGINT NOT NULL REFERENCES problems(id) ON DELETE CASCADE,
+  code       TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, problem_id)
+);
+
 CREATE TABLE IF NOT EXISTS submission_results (
   id             BIGSERIAL PRIMARY KEY,
   submission_id  BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
