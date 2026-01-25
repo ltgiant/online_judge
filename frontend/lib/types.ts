@@ -137,3 +137,16 @@ export type ClassStudentSubmission = {
   finished_at: string | null;
   source_code: string;
 };
+
+export type ClassProblemSubmission = {
+  id: number;
+  student_id: number;
+  student_username: string | null;
+  student_email: string;
+  status: string;
+  score: number;
+  time_ms: number;
+  created_at: string | null;
+  finished_at: string | null;
+  source_code: string;
+};

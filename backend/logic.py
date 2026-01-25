@@ -575,6 +575,41 @@ def list_class_submissions_for_student(class_id: int, student_id: int):
             for r in cur.fetchall()
         ]
 
+def list_class_submissions_for_problem(class_id: int, problem_id: int):
+    with DB() as cur:
+        cur.execute("""
+            SELECT s.id, s.status, s.score, s.time_ms, s.created_at, s.finished_at,
+                   s.source_code, u.id, u.username, u.email,
+                   p.id, p.title, p.slug
+            FROM submissions s
+            JOIN users u ON u.id = s.user_id
+            JOIN class_students cs ON cs.student_id = s.user_id AND cs.class_id = %s
+            JOIN class_week_problems cwp ON cwp.problem_id = s.problem_id
+            JOIN class_weeks cw ON cw.id = cwp.class_week_id AND cw.class_id = cs.class_id
+            JOIN problems p ON p.id = s.problem_id
+            WHERE s.problem_id = %s
+            ORDER BY s.created_at DESC
+            LIMIT 200
+        """, (class_id, problem_id))
+        return [
+            {
+                "id": r[0],
+                "status": r[1],
+                "score": r[2],
+                "time_ms": r[3],
+                "created_at": r[4],
+                "finished_at": r[5],
+                "source_code": r[6],
+                "student_id": r[7],
+                "student_username": r[8],
+                "student_email": r[9],
+                "problem_id": r[10],
+                "problem_title": r[11],
+                "problem_slug": r[12],
+            }
+            for r in cur.fetchall()
+        ]
+
 def store_problem_testcases(problem_id: int, testcases: list[dict], *, replace_existing: bool):
     with DB() as cur:
         if replace_existing:
