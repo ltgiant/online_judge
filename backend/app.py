@@ -1139,6 +1139,46 @@ def teacher_student_submissions_in_class(class_id: int, student_id: int, me: MeO
             for s in submissions
         ],
     }
+
+@app.get("/teacher/classes/{class_id}/problems/{problem_id}/submissions")
+def teacher_problem_submissions_in_class(class_id: int, problem_id: int, me: MeOut = Depends(get_current_user)):
+    ensure_role(me, {"teacher", "admin"})
+    cls = logic.get_class(class_id)
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found")
+    if me.role == "teacher" and not logic.teacher_in_class(me.id, class_id):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not logic.class_has_problem(class_id, problem_id):
+        raise HTTPException(status_code=400, detail="Problem is not assigned to this class")
+    submissions = logic.list_class_submissions_for_problem(class_id, problem_id)
+    if submissions:
+        problem_title = submissions[0]["problem_title"]
+        problem_slug = submissions[0]["problem_slug"]
+    else:
+        problem = logic.get_problem(problem_id)
+        problem_title = problem["title"] if problem else None
+        problem_slug = problem["slug"] if problem else None
+    return {
+        "class_id": class_id,
+        "problem_id": problem_id,
+        "problem_title": problem_title,
+        "problem_slug": problem_slug,
+        "submissions": [
+            {
+                "id": s["id"],
+                "student_id": s["student_id"],
+                "student_username": s["student_username"],
+                "student_email": s["student_email"],
+                "status": s["status"],
+                "score": s["score"],
+                "time_ms": s["time_ms"],
+                "created_at": _to_iso(s["created_at"]),
+                "finished_at": _to_iso(s["finished_at"]),
+                "source_code": s["source_code"],
+            }
+            for s in submissions
+        ],
+    }
 # ---------- 제출 조회/결과 ----------
 from datetime import timezone
 

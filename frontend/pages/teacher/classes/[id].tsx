@@ -630,6 +630,20 @@ export default function TeacherClassDetailPage() {
                         )}
                       </div>
                       <div className="flex items-start gap-2">
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            className="rounded border px-2 py-1 text-[11px] hover:bg-white"
+                            onClick={() => {
+                              if (Number.isInteger(classId)) {
+                                void router.push(
+                                  `/teacher/classes/${classId}/problems/${p.id}/submissions`,
+                                );
+                              }
+                            }}
+                          >
+                            제출 기록
+                          </button>
+                        </div>
                         {label.startsWith("Week ") && (
                           <div className="flex flex-col items-center gap-1">
                             <button
