@@ -31,7 +31,12 @@ WORKFLOW.md
 .env.local
 env/.env.dev
 env/.env.prod
+env/.env.localprod
 !env/env.example
 
 # docs
 docs/
+
+# images (tracked)
+!images/
+!images/*.png

@@ -1,69 +1,67 @@
-# Online Judge – Docker 배포/운영 안내
+# Online Judge
 
-## 목차
-0. 소개
-1. 서비스 개요
-2. 환경 변수
-3. 개발/배포 워크플로우
-4. systemd 관리(배포용)
-5. DB 덤프/복원
-6. 모니터링/로그
-7. NGINX / Cloudflare 흐름
-8. 컴포넌트별 흐름
-9. 기타(이메일러 등)
+## Table of Contents
+0. Introduction
+1. Service Overview
+2. Environment Variables
+3. Development/Deployment Workflow
+4. systemd Management (Production)
+5. DB Dump/Restore
+6. Monitoring/Logs
+7. NGINX / Cloudflare Flow
 
-## 0. 소개
-- 프로그래밍 문제를 풀고 채점 결과를 실시간으로 받는 온라인 저지(프론트/백엔드/채점 워커/DB 분리) 서비스.
+## 0. Introduction
+- An online judge service where users solve programming problems and receive real-time grading results (separate frontend/backend/judge worker/DB).
 
-## 1. 서비스 개요
-- 구성: 프론트(Next.js 16), 백엔드(FastAPI, Python), 워커(Python judge), DB(Azure PostgreSQL 17.7)
-- 포트: 백엔드 8000, 프론트 3000 (개발용은 8100/3100/55432)
-- 라우팅: 브라우저 → Cloudflare(HTTPS) → NGINX(443) → `/api`는 백엔드(8000), `/`는 프론트(3000)로 프록시.
-- DB 사용: 백엔드/워커 모두 Azure Postgres에 접속. 백엔드는 제출을 `submissions` 테이블에 `queued` 상태로 기록하고, 워커는 같은 테이블을 폴링하여 `queued` 건을 집어 채점 후 `submission_results`/`submissions`(status, score, time)을 업데이트.
-- 워커 트리거: 별도 큐 없이 워커 컨테이너(`online_judge-worker`)가 상시 실행되며 주기적으로 DB를 조회해 새 제출을 가져와 처리한다.
+## 1. Service Overview
+- Components: Frontend (Next.js 16), Backend (FastAPI, Python), Worker (Python judge), DB (Azure PostgreSQL 17.7 while service, currently local PostgreSQL in VM)
+- Ports: Backend 8000, Frontend 3000 (Dev: 8100/3100/55432)
+- Routing: Browser → Cloudflare (HTTPS) → NGINX (443) → `/api` proxied to backend (8000), `/` proxied to frontend (3000).
+- DB usage: Backend/worker both connect to Azure Postgres. Backend records submissions into `submissions` with status `queued`, worker polls the same table and updates `submission_results`/`submissions` (status, score, time).
+- Worker trigger: No separate queue; worker container (`online_judge-worker`) runs continuously and periodically fetches new submissions.
 
-## 2. 환경 변수
-- `env/.env.prod`: 운영 (Azure DB, JWT, SMTP, `NEXT_PUBLIC_API_BASE=https://cotea.io/api`)
-- `env/.env.dev`: 개발 (로컬 DB 컨테이너, 포트 오버라이드 8100/3100/55432)
-- `env/env.example`: 키 이름 참고용  
-> 비밀(.env.prod)은 Git에 올리지 말고 서버/시크릿 스토어에만 보관.
+## 2. Environment Variables
+- `env/.env.prod`: Production (Azure DB, JWT, SMTP, `NEXT_PUBLIC_API_BASE=https://cotea.io/api`)
+- `env/.env.dev`: Development (local DB container, port overrides 8100/3100/55432)
+- `env/env.example`: Reference for key names  
+> Do not commit secrets (.env.prod) to Git. Store them only on the server/secret store.
 
-## 3. 개발/배포 워크플로우
-- 공통: Git으로 코드 버전 관리 → (옵션) Docker 이미지에 태그 → 서버에서 `docker compose` 실행.
-- 태그/재시작 정책 권장: 서비스별 이미지 태그 고정(`backend:1.0.0`, `frontend:1.0.0`, `worker:1.0.0`) 후 compose에서 해당 태그 사용, `restart: always` 적용 시 장애 시 자동 재기동/롤백 용이.
-- 개발 예시
+## 3. Development/Deployment Workflow
+- Common: Manage code with Git → (optional) tag Docker images → run `docker compose` on server.
+- Recommended tagging/restart policy: Fix image tags per service (`backend:1.0.0`, `frontend:1.0.0`, `worker:1.0.0`) and use those in compose. With `restart: always`, auto-restart/rollback becomes easier.
+- Development example:
   1) `git pull`
-  2) 로컬 DB 컨테이너 포함 실행: `docker compose -p oj-dev --env-file env/.env.dev up -d db backend worker frontend`
-  3) 코드 수정 후 필요하면 프론트/백엔드 빌드(`docker compose -p oj-dev --env-file env/.env.dev build frontend backend`)
-  4) 테스트 끝나면 `git add/commit/push`
-- 배포 예시
-  1) 서버에서 `git pull` (또는 태그/이미지 pull)
-  2) Azure DB 사용, DB 컨테이너 생략: `docker compose -p oj-prod --env-file env/.env.prod up -d backend worker frontend --no-deps`
-  3) 프론트는 prod API 베이스로 이미 빌드됨 (.env.prod)
-- 스키마 변경 반영(로컬→Azure)
-  1) 로컬 DB에서 마이그레이션/DDL 적용 후 덤프:  
+  2) Run with local DB container: `docker compose -p oj-dev --env-file env/.env.dev up -d db backend worker frontend`
+  3) Rebuild if needed after code changes: `docker compose -p oj-dev --env-file env/.env.dev build frontend backend`
+  4) After testing: `git add/commit/push`
+- Deployment example:
+  1) `git pull` on server (or pull image tags)
+  2) Use Azure DB, skip DB container: `docker compose -p oj-prod --env-file env/.env.prod up -d backend worker frontend --no-deps`
+  3) Frontend is already built with prod API base (.env.prod)
+- Schema change propagation (local → Azure):
+  1) Apply migrations/DDL locally, then dump:  
      `PGPASSWORD="ojpass" pg_dump -Fc -h localhost -p 5432 -U oj -d oj > dump_host.pg`
-  2) Azure에 복원(덮어쓰기 주의): README의 “DB 덤프/복원” 절차로 `pg_restore` 실행
-  3) 필요 시 백엔드/워커 재시작: `docker compose -p oj-prod --env-file .env.prod up -d backend worker frontend --no-deps`
+  2) Restore to Azure (overwrite with caution): use the “DB Dump/Restore” procedure below
+  3) Restart backend/worker if needed: `docker compose -p oj-prod --env-file .env.prod up -d backend worker frontend --no-deps`
 
-## 4. systemd 관리(배포용)
-- 유닛: `/etc/systemd/system/online-judge.service`
-- 실행: `/usr/bin/docker compose -p oj-prod --env-file env/.env.prod up -d backend worker frontend --no-deps`
-- 시작/중지:
+## 4. systemd Management (Production)
+- Unit: `/etc/systemd/system/online-judge.service`
+- Run: `/usr/bin/docker compose -p oj-prod --env-file env/.env.prod up -d backend worker frontend --no-deps`
+- Start/Stop:
   ```bash
   sudo systemctl start online-judge.service
   sudo systemctl stop online-judge.service
-  sudo systemctl enable online-judge.service   # 부팅 시 자동 시작
+  sudo systemctl enable online-judge.service   # start on boot
   sudo systemctl disable online-judge.service
   sudo systemctl status online-judge.service
   ```
 
-## 5. DB 덤프/복원 (예시)
+## 5. DB Dump/Restore (Example)
 ```bash
-# 로컬 DB -> 덤프
+# Local DB -> dump
 PGPASSWORD="ojpass" pg_dump -Fc -h localhost -p 5432 -U oj -d oj > dump_host.pg
 
-# Azure로 복원(덮어쓰기 주의)
+# Restore to Azure (overwrite with caution)
 docker run --rm \
   -e PGHOST=oj-prod.postgres.database.azure.com \
   -e PGPORT=5432 \
@@ -77,25 +75,25 @@ docker run --rm \
     --clean --if-exists --format=custom /dump.pg
 ```
 
-## 6. 모니터링/로그
-- 실시간 로그: `docker compose logs -f backend worker frontend`
-- systemd 로그(배포): `sudo journalctl -u online-judge -f` (또는 `-n 200`)
-- 헬스: 임시로 `/docs` 또는 `/` curl; 추후 `/health` 추가 예정
-- 상태: `docker compose ps`, `docker ps`
+## 6. Monitoring/Logs
+- Live logs: `docker compose logs -f backend worker frontend`
+- systemd logs (prod): `sudo journalctl -u online-judge -f` (or `-n 200`)
+- Health: Temporary `/docs` or `/` curl; `/health` planned
+- Status: `docker compose ps`, `docker ps`
 
-## 7. NGINX / Cloudflare 흐름
-- Cloudflare: HTTPS 프록시, 오리진은 NGINX(서버 IP:443)
-- NGINX 라우팅:
-  - `/api/` → `http://127.0.0.1:8000/` (프리픽스 제거)
+## 7. NGINX / Cloudflare Flow
+- Cloudflare: HTTPS proxy; origin is NGINX (server IP:443)
+- NGINX routing:
+  - `/api/` → `http://127.0.0.1:8000/` (prefix removed)
   - `/` → `http://127.0.0.1:3000`
-- 프론트 빌드 시 `NEXT_PUBLIC_API_BASE=https://cotea.io/api` 로 설정하면 `/api/...` 요청이 백엔드로 전달됨.
-- 개발 시(로컬): Cloudflare/NGINX 없이 직접 포트로 접근. 프런트 3100, 백엔드 8100, 로컬 DB 컨테이너는 55432. API 베이스를 `http://localhost:8100` 등으로 맞추고 브라우저에서 직접 호출한다.
+- When building frontend with `NEXT_PUBLIC_API_BASE=https://cotea.io/api`, `/api/...` requests go to backend.
+- In development (local): Access ports directly without Cloudflare/NGINX. Frontend 3100, backend 8100, local DB container 55432. Set API base to `http://localhost:8100`, etc.
 
-## 8. 컴포넌트별 흐름
-- 백엔드: (작성 예정)
-- 프론트: (작성 예정)
-- DB: (작성 예정)
-- 워커: (작성 예정)
+## 8. Screenshots
+![Signup](images/signup.png)
+![Student solving a problem](images/student-solve.png)
+![Student submissions](images/student-submissions.png)
+![Problem list management](images/problem-list-management.png)
 
-## 9. 기타(이메일러 등)
-- (작성 예정)
+## 9. Try It
+- After signing up, go to Class → enter Code: `1GK14T` to join and start solving problems.
