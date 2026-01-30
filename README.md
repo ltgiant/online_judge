@@ -8,20 +8,30 @@ An online judge service where users solve programming problems and receive real-
 - Routing: Browser → Cloudflare (HTTPS) → NGINX (443) → `/api` proxied to backend (8000), `/` proxied to frontend (3000)
 - Worker: No separate queue; the worker polls the DB for new submissions and updates results
 
-## Operations
-- Deployment, environment variables, systemd setup, and DB dump/restore are documented in `docs/ops.md`.
-
 ## Architecture Diagram
-```mermaid
-flowchart LR
-  User((User)) --> CF[Cloudflare]
-  CF --> NGINX[NGINX]
-  NGINX --> FE[Frontend (Next.js)]
-  NGINX --> BE[Backend (FastAPI)]
-  BE --> DB[(PostgreSQL)]
-  BE --> SMTP[SMTP]
-  BE --> Worker[Judge Worker]
-  Worker --> DB
+![Architecture](images/architecture.svg)
+
+## Database ERD
+![Database ERD](images/erd.svg)
+- `users`: accounts, roles, email verification
+- `problems`: problem metadata, statement, difficulty
+- `testcases`: public/private test cases per problem
+- `submissions`: user submissions and judging status
+- `submission_results`: per-testcase results for each submission
+- `classes` + `class_*`: class, week, and assignment structures
+
+## API Summary
+- API details are documented in `docs/api.md`.
+```
+POST /auth/register
+GET  /auth/verify
+POST /auth/login
+GET  /me
+GET  /problems
+GET  /problems/{pid}
+POST /submissions
+GET  /submissions/{sid}
+GET  /submissions/{sid}/results
 ```
 
 ## Screenshots
@@ -32,3 +42,6 @@ flowchart LR
 
 ## Try It
 - After signing up, go to Class → enter Code: `1GK14T` to join and start solving problems.
+
+## Operations
+- Deployment, environment variables, systemd setup, and DB dump/restore are documented in `docs/ops.md`.
