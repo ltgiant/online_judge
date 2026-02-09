@@ -108,6 +108,11 @@ CREATE TABLE IF NOT EXISTS user_problem_drafts (
   PRIMARY KEY (user_id, problem_id)
 );
 
+CREATE TABLE IF NOT EXISTS worker_heartbeat (
+  worker_id  TEXT PRIMARY KEY,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS submission_results (
   id             BIGSERIAL PRIMARY KEY,
   submission_id  BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,

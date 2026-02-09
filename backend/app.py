@@ -15,7 +15,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, Header, UploadFile, File, Form, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from backend import logic
@@ -427,6 +427,20 @@ def api_create_submission(data: SubmissionCreate, me: MeOut = Depends(get_curren
 # ---------- 문제 목록 및 상세 ----------
 from backend.db import DB
 from typing import List
+
+@app.get("/health")
+def health_check(response: Response):
+    db_ok = True
+    try:
+        with DB() as cur:
+            cur.execute("SELECT 1")
+    except Exception:
+        db_ok = False
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "db": "ok" if db_ok else "error",
+    }
 
 class Problem(BaseModel):
     id: int

@@ -14,6 +14,8 @@ DSN = (
     f"port={os.getenv('POSTGRES_PORT')} "
     f"sslmode={PG_SSLMODE}"
 )
+WORKER_ID = os.getenv("WORKER_ID", "worker-1")
+HEARTBEAT_INTERVAL_SEC = int(os.getenv("WORKER_HEARTBEAT_INTERVAL", "30"))
 
 def pick_one(conn):
     with conn.cursor(cursor_factory=DictCursor) as cur:
@@ -132,11 +134,29 @@ def parse_robot_output(out: str) -> dict | None:
             pass
     return None
 
+def update_heartbeat(conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO worker_heartbeat(worker_id, updated_at)
+            VALUES (%s, NOW())
+            ON CONFLICT (worker_id)
+            DO UPDATE SET updated_at = EXCLUDED.updated_at
+            """,
+            (WORKER_ID,),
+        )
+    conn.commit()
+
 def main():
     conn = psycopg2.connect(DSN)
     conn.autocommit = False
     print("[worker] started")
+    last_hb = 0.0
     while True:
+        now = time.time()
+        if now - last_hb >= HEARTBEAT_INTERVAL_SEC:
+            update_heartbeat(conn)
+            last_hb = now
         sid = pick_one(conn)
         if not sid:
             time.sleep(0.5)
